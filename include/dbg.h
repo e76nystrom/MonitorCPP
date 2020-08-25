@@ -1,4 +1,4 @@
-#ifdef __STM32F1xx_HAL_H
+#if defined(__STM32F1xx_HAL_H) | defined(STM32F3)
 #if !defined(__DBG_H)
 #define __DBG_H
 

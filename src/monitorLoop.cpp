@@ -1,4 +1,13 @@
+//******************************************************************************
+#if defined(STM32F1)
 #include "stm32f1xx_hal.h"
+#endif
+#if defined(STM32F3)
+#include "stm32f3xx_hal.h"
+#endif
+#if defined(STM32F4)
+#include "stm32f4xx_hal.h"
+#endif
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -7,19 +16,19 @@
 #include <math.h>
 #include <limits.h>
 
-#include "sync.h"
+#include "config.h"
+#include "adc.h"
 #include "serialio.h"
 #include "lclcmd.h"
 #include "remcmd.h"
 
-enum RUN_STATE {ST_IDLE, ST_WAIT_RPM, ST_WAIT_DONE};
+#define EXT extern
+#include "current.h"
 
-void syncLoopSetup(void);
-extern "C" int16_t syncLoop(void);
+void monitorLoopSetup(void);
+extern "C" int16_t monitorLoop(void);
 extern "C" void hard_fault_handler_c (unsigned int * hardfault_args);
 
-void runControl(void);
-unsigned int runState = ST_IDLE;
 uint32_t runTime;
 #define RUN_TIMEOUT 5000
 
@@ -43,7 +52,7 @@ T_PINDEF pinDef[] =
 
 #endif
 
-#define DATA_SIZE 1
+#define DATA_SIZE 0
 
 #if DATA_SIZE
 
@@ -57,7 +66,10 @@ extern char __stack;
 extern char __Main_Stack_Limit;
 #endif
 
-void syncLoopSetup(void)
+extern ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc2;
+
+void monitorLoopSetup(void)
 {
  flushBuf();
 
@@ -86,20 +98,25 @@ void syncLoopSetup(void)
 
 #define LED_DELAY 500
 
-int16_t syncLoop(void)
+#define PWR_INTERVAL (1 * 1000)
+
+int16_t monitorLoop(void)
 {
  uint32_t ledUpdTime;
+ uint32_t pwrUpdTime;
  unsigned char ch;
  uint32_t extInt[] =
  {
   EXTI0_IRQn,
   EXTI1_IRQn,
-  EXTI2_IRQn,
+//  EXTI2_IRQn,
   EXTI3_IRQn,
   EXTI4_IRQn,
   EXTI9_5_IRQn,
   EXTI15_10_IRQn
  };
+
+ putstr("polled output starting\n");
 
 #if 0
  DBGMCU->APB1FZ = DBGMCU_APB1_FZ_DBG_IWDG_STOP; /* stop wd on debug */
@@ -110,18 +127,22 @@ int16_t syncLoop(void)
  while (--i >= 0)		/* while not at end of list */
   HAL_NVIC_DisableIRQ((IRQn_Type) *p++);	/* disable external interrupt */
 
+#if 0
 #if REM_ISR
  initRem();
 #else
  HAL_NVIC_DisableIRQ(REMOTE_IRQn);
 #endif
+#endif
 
  initCharBuf();
 
- putstr("start sync loop\n");
+ putstr("start monitor loop\n");
+#if defined(REMPORT)
  putstr1("start remcmd\n");
+#endif
 
- syncLoopSetup();
+ monitorLoopSetup();
  
  #if DATA_SIZE
  unsigned int bss = (unsigned int) (&__bss_end__ - &__bss_start__);
@@ -132,32 +153,106 @@ int16_t syncLoop(void)
 	getSP());
  #endif
 
- uint32_t clockFreq = HAL_RCC_GetHCLKFreq();
- uint32_t FCY = HAL_RCC_GetPCLK2Freq();
- cfgFcy = FCY;
- clocksMin = (uint64_t) FCY * 60;
- printf("clock frequency %lu FCY %lu %x\n",
-	clockFreq, FCY, (unsigned int) &cfgFcy);
+ printf("DWT_CTRL %x\n", (unsigned int) DWT->CTRL);
+ resetCnt();
+ startCnt();
+ stopCnt();
+ printf("cycles %u\n", getCycles());
+
+ clockFreq = HAL_RCC_GetHCLKFreq();
+ tmrFreq = HAL_RCC_GetPCLK2Freq();
+ printf("clock frequency %u FCY %u\n",
+	(unsigned int) clockFreq, (unsigned int) tmrFreq);
  printf("sysTick load %d\n", (int) SysTick->LOAD);
+
+ uint32_t counter = clockFreq / (CYCLES_SEC * SAMPLES_CYCLE * CHAN_PAIRS);
+ uint16_t psc = 1;
+ uint32_t ctr;
+ while (1)
+ {
+  ctr = counter / psc;
+  if (ctr < 65536)
+   break;
+  psc += 1;
+ }
+ printf("tmr1 psc %u ctr %u\n", (unsigned int) psc, (unsigned int) ctr);
+ psc -= 1;
+ adcTmrScl(psc);
+ adcTmrMax(ctr);
+#if 1
+ adcTmrCCR(ctr / 2);
+#endif
 
 #if PIN_DISPLAY
  pinDisplay();
 #endif
 
- HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); /* encoder interrupts */
- EXTI->PR = A_Pin | B_Pin;
+#define HAL 1
+
+#if HAL
+#if defined(STM32F1)
+ HAL_StatusTypeDef status = HAL_ADCEx_Calibration_Start(&hadc1);
+#endif
+#if defined(STM32F3)
+ HAL_StatusTypeDef status =
+  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+ #endif
+#if defined(STM32F1)
+ printf("calibration status %d\n", status);
+ status = HAL_ADCEx_Calibration_Start(&hadc2);
+#endif
+#if defined(STM32F3)
+ status = HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+#endif
+ printf("calibration status %d\n", status);
+ #else
+
+ printf("calibration 1\n");
+ flushBuf();
+ LL_ADC_Enable(ADC1);
+ ADC1->CR2 |= ADC_CR2_RSTCAL;
+ while ((ADC1->CR2 & ADC_CR2_RSTCAL) != 0)
+ {
+  putx('r');
+ }
+
+ ADC1->CR2 |= ADC_CR2_CAL;
+ while ((ADC1->CR2 & ADC_CR2_CAL) != 0)
+ {
+  putx('1');
+ }
+
+ printf("calibration 2\n");
+ flushBuf();
+ LL_ADC_Enable(ADC2);
+ ADC2->CR2 |= ADC_CR2_RSTCAL;
+ while ((ADC2->CR2 & ADC_CR2_RSTCAL) != 0)
+ {
+  putx('r');
+ }
+
+ ADC2->CR2 |= ADC_CR2_CAL;
+ while ((ADC2->CR2 & ADC_CR2_CAL) != 0)
+ {
+  putx('2');
+ }
+ 
+ printf("calibration done\n");
+ LL_ADC_Disable(ADC1);
+ LL_ADC_Disable(ADC2);
+
+ #endif	 /* HAL */
+
+ rmsCfgInit();
+ pwrUpdTime = millis() - PWR_INTERVAL;
 
  ledUpdTime = millis();
  ledSet();
- printf("readySet()\n");
- readySet();
- runState = ST_IDLE;
  while (1)			/* main loop */
  {
   newline();
   while (1)			/* input background loop */
   {
-   runControl();		/* call run control state machine */
 
    uint32_t t = millis();
    if ((t - ledUpdTime) > LED_DELAY) /* if time to flash led */
@@ -169,130 +264,48 @@ int16_t syncLoop(void)
      ledSet();
    }
 
-#if 0
-   if (encoder())		/* if encoder set */
+   if (pwrActive)
    {
-    if (encTmo <= 0)		/* if timed out */
+    if ((t - pwrUpdTime) > PWR_INTERVAL)
     {
-     encoderClr();		/* clear biy */
-    }
-    else			/* if not timed out */
-    {
-     encTmo -= 1;		/* count another interval */
-    }
-   }
-   else				/* if not set */
-   {
-    encTmo = 2;			/* reset timer */
-   }
-#endif   
-   pollBufChar();		/* check for data to output */
-   if (chRdy())			/* if character available */
-   {
-    ch = chRead();		/* return it */
-    if (ch == 0x11)		/* if xon */
-     continue;			/* no echo */
-    if (ch == 0x13)		/* if xoff */
-     continue;			/* no echo */
-    putBufChar(ch);		/* echo input */
-    break;
-   }
-
-#if REM_ISR == 0
-   if (chRdy1())		/* if character on remote link */
-   {
-    ch = chRead1();		/* read character */
-    if (ch == 1)		/* if control a */
-    {
-     remcmd();			/* process remote command */
-    }
-   }
-   else
-   {
-    pollBufChar();		/* check for data to output */
-    if (chRdy())		/* if character available */
-    {
-     ch = chRead();		/* return it */
-#if 0
-     if (ch == 3)		/* if control c */
+     pwrUpdTime = t;
+     for (i = 0; i < maxChan; i++)
      {
-      setupDone = 1;		/* force setup done */
+      chanCfg[i].pwr->update = true;
+     }
+    }
+   
+    for (i = 0; i < maxChan; i++)
+    {
+     P_RMSPWR pwr = chanCfg[i].pwr;
+     updatePower(pwr);
+#if 0
+     if (pwr->done)
+     {
+      printf("offset %d vRms %d v %5.3f\n",
+	     pwr->v.offset, pwr->vRms,
+	     ((pwr->vRms * (float) 3300) / 4095) / 1000);
+      printf("offset %d cRms %d c %5.3f\n",
+	     pwr->c.offset, pwr->cRms,
+	     ((pwr->cRms * (float) 3300) / 4095) / 1000);
+      pwr->done = false;
      }
 #endif
     }
    }
-#endif
+
+   pollBufChar();		/* check for data to output */
+   if (dbgRxReady())		/* if character available */
+   {
+    ch = dbgRxRead();		/* return it */
+    putBufChar(ch);		/* echo input */
+    break;
+   }
   }
 
   flushBuf();
   lclcmd(ch);			/* local commands */
   flushBuf();
-#if REM_ISR == 0
-  if (remcmdTimeout < UINT_MAX)
-   remcmdUpdateTime = millis();
-#endif
- }
-}
-
-void runControl()
-{
- switch(runState)
- {
- case ST_IDLE:			/* 0 idle */
-  if (startIsClr())		/* if time to start */
-  {
-   printf("startClr()\n");
-   encoderMeasure();		/* start rpm measurement */
-   runTime = millis();		/* save start time */
-   runState = ST_WAIT_RPM;	/* wait for measurement */
-  }
-  break;
-
- case ST_WAIT_RPM:		/* 1 wait for rpm measruement */
-  if (startIsSet())		/* if start set */
-  {
-   printf("startSet()\n");
-   readySet();			/* make sure ready is set */
-   encoderStop();		/* stop encoder */
-   runState = ST_IDLE;		/* return to idle */
-   break;
-  }
-
-  if (cmpTmr.measure == 0)	/* if measurement complete */
-  {
-   encoderCalculate();		/* calculate actual prescaler */
-   encoderStart();		/* start encoder */
-//   printf("PA3 %d\n", ((XFlag_Pin & XFlag_GPIO_Port->ODR) != 0));
-   printf("readyClr()\n");
-   readyClr();			/* set ready bit */
-//   printf("PA3 %d\n", ((XFlag_Pin & XFlag_GPIO_Port->ODR) != 0));
-   runTime = millis();		/* save time */
-   runState = ST_WAIT_DONE;	/* wait for done */
-  }
-  else if ((millis() - runTime) > RUN_TIMEOUT)
-  {
-   cmpTmr.measure = 0;		/* clear measure flag */
-   readySet();			/* make sure ready is set */
-   encoderStop();		/* stop encoder */
-   runState = ST_IDLE;		/* return to idle state*/
-  }
-  break;
-
- case ST_WAIT_DONE:		/* 2 wait for start cleared */
-  if (startIsSet())		/* if start bit cleared */
-  {
-//   printf("PA3 %d\n", ((XFlag_Pin & XFlag_GPIO_Port->ODR) != 0));
-   printf("readySet()\n");
-   readySet();			/* clear ready bit */
-//   printf("PA3 %d\n", ((XFlag_Pin & XFlag_GPIO_Port->ODR) != 0));
-   runState = ST_IDLE;		/* return to idle state */
-  }
-  else if ((millis() - runTime) > RUN_TIMEOUT)
-  {
-   readySet();			/* clear ready bit */
-   runState = ST_IDLE;		/* return to idle state*/
-  }
-  break;
  }
 }
 

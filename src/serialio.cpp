@@ -1,6 +1,14 @@
 #if !defined(INCLUDE)
 #define __SERIALIO__
+#if defined(STM32F1)
 #include "stm32f1xx_hal.h"
+#endif
+#if defined(STM32F3)
+#include "stm32f3xx_hal.h"
+#endif
+#if defined(STM32F4)
+#include "stm32f4xx_hal.h"
+#endif
 
 #include <stdio.h>
 #include <stdint.h>
@@ -8,12 +16,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
-
-#include "config.h"
-#include "dbg.h"
-
-#include "remcmd.h"
-#include "remvar.h"
 
 #ifdef EXT
 #undef EXT
@@ -24,6 +26,9 @@
 #endif
 
 #if defined(__SERIALIO_INC__)	// <-
+
+#include "config.h"
+#include "dbg.h"
 
 #if !defined(EXT)
 #define EXT extern
@@ -127,11 +132,108 @@ EXT char dbgBuffer;
 EXT char lineStart;
 EXT char eolFlag;
 
+#if defined(STM32F1)
+
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->SR & USART_SR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->DR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->SR & USART_SR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->SR & USART_SR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->DR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+
+inline uint32_t remRxReady()
+{
+ return(REMPORT->SR & USART_SR_RXNE);
+}
+inline char remRxRead()
+{
+ return((char) REMPORT->DR);
+}
+inline void remRxIntEna()
+{
+ REMPORT->CR1 |= USART_CR1_RXNEIE;
+}
+inline uint32_t remRxOverrun()
+{
+ return(REMPORT->SR & USART_SR_ORE);
+}
+inline uint32_t remTxEmpty()
+{
+ return(REMPORT->SR & USART_SR_TXE);
+}
+inline void remTxSend(char ch)
+{
+ REMPORT->DR = ch;
+}
+inline void remTxIntEna()
+{
+ REMPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void remTxIntDis()
+{
+ REMPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+#endif
+
+#if defined(STM32F3)
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->ISR & USART_ISR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->RDR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->ISR & USART_ISR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->ISR & USART_ISR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->TDR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+#endif
+
 /* debug port macros */
 
 #define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
 #define SNDHEX(val) sndhex((unsigned char *) &val, sizeof(val))
 
+#if 0
 #define chRdy() (DBGPORT->SR & USART_SR_RXNE)
 #define chRead() DBGPORT->DR
 
@@ -139,6 +241,7 @@ EXT char eolFlag;
 
 #define chRdy1() (REMPORT->SR & USART_SR_RXNE)
 #define chRead1() REMPORT->DR
+#endif
 
 #if DBGMSG
 
@@ -748,6 +851,7 @@ unsigned char getnum1(void)
  return(NO_VAL);
 }
 
+#if 0
 void initRem(void)
 {
  memset(&remCtl, 0, sizeof(remCtl));
@@ -1011,6 +1115,8 @@ unsigned char getnumRem(void)
  }
  return(NO_VAL);
 }
+
+#endif
 
 void initCharBuf(void)
 {

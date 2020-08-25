@@ -8,6 +8,10 @@
 #include "config.h"
 #include "dbg.h"
 
+unsigned int millis(void);
+
+#if 0
+
 #define DBG_CMP 1		/* debug capture timer */
 #define DBG_CMP_TIME 1		/* debug capture interrupt timing */
 #define DBG_INT 1		/* debug internal timer */
@@ -22,8 +26,6 @@
 typedef uint8_t boolean;
 
 #include "dbgtrk.h"
-
-unsigned int millis(void);
 
 #define DIR_POS      1           /* 0x01 positive direction */
 #define DIR_NEG      -1          /* 0x-1 negative direction */
@@ -97,6 +99,8 @@ EXT char encRev;
 
 void testEncoderStart(void);
 void testEncoderStop(void);
+
+#endif
 
 #endif
 

@@ -1,4 +1,4 @@
-#ifdef __STM32F1xx_HAL_H
+#if defined( __STM32F1xx_HAL_H) | defined( __STM32F3xx_HAL_H)
 #if !defined(__PINDEF_H)
 #define __PINDEF_H
 

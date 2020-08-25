@@ -1,6 +1,12 @@
 #if !defined(INCLUDE)
 #define __LCLCMD__
+#if defined(STM32F1)
 #include "stm32f1xx_hal.h"
+#endif
+
+#if defined(STM32F3)
+#include "stm32f3xx_hal.h"
+#endif
 
 #include <stdio.h>
 #include <stdint.h>
@@ -9,9 +15,9 @@
 #include <math.h>
 
 #define EXT extern
-#include "sync.h"
-#include "remvar.h"
+#include "config.h"
 #include "serialio.h"
+#include "current.h"
 
 #ifdef EXT
 #undef EXT
@@ -63,155 +69,26 @@ void lclcmd(int ch)
  {
   printf("\ncharOverflow %d\n", charOverflow);
  }
- else if (ch == 1)
- {
-  cmpTmrCap1SetIE();
-  cmpTmrCap2SetIE();
-  cmpTmrStart();
- }
- else if (ch == 2)
- {
-  cmpTmr.startInt = 1;
- }
-
- else if (ch == 'e')
+ else if (ch == 'a')
  {
   newline();
-  encoderStop();
-  if (query(&getnum, "encoder cycle %d: ",  cmpTmr.encCycLen))
-  {
-   if (val != 0)
-    cmpTmr.encCycLen = val;
-  }
-  if (query(&getnum, "internal cycle %d: ", cmpTmr.intCycLen))
-  {
-   if (val != 0)
-    cmpTmr.intCycLen = val;
-  }
-  if (cmpTmr.preScale == 0)
-   cmpTmr.preScale = 1;
-  if (query(&getnum, "pre scaler %d: ", cmpTmr.preScale))
-  {
-   if (val != 0)
-    cmpTmr.preScale = val;
-  }
-#if ENCODER_TEST
-  if (testPulseMin != 0)
-  {
-   uint32_t tmrClkFreq = HAL_RCC_GetPCLK2Freq();
-   uint64_t clksMin = (uint64_t) tmrClkFreq * 60;
-   uint32_t clocksPulse = (uint32_t) (clksMin / testPulseMin);
-   uint32_t clocksCycle = cmpTmr.encCycLen * clocksPulse;
-   uint32_t clocksOutPulse = clocksCycle / cmpTmr.intCycLen;
-   printf("\nclocksCycle %ld clocksPulse %ld clocksOutPulse %ld\n",
-	 clocksCycle, clocksPulse, clocksOutPulse);
-   printf("scaled clocksCycle %ld clocksPulse %ld clocksOutPulse %ld\n",
-	  clocksCycle / cmpTmr.preScale, clocksPulse / cmpTmr.preScale,
-	  clocksOutPulse / cmpTmr.preScale);
-  }
-#endif
-  newline();
-  encoderStart();
+  adcRead1();
  }
- else if (ch == 'S')
+ else if (ch == 'r')
  {
-  printf("\nstop encoder\n");
-  cmpTmr.stop = 1;
+  newline();
+  adcRun();
  }
-#if DBG_COUNT
+ else if (ch == 's')
+ {
+  newline();
+  adcStatus();
+ }
  else if (ch == 't')
  {
-  printf("\nencCount %ld intCount %ld cycleCount %ld missedStart %d\n",
-	 cmpTmr.encCount, cmpTmr.intCount, cmpTmr.cycleCount,
-	 cmpTmr.missedStart);
- }
-#endif
- else if (ch == '?')
- {
   newline();
-// (clocksPerSec*60*ratioDenom)/(clocksCycle*encoderPulse)
-  uint32_t tmrClkFreq = HAL_RCC_GetPCLK2Freq();
-  uint64_t n = (uint64_t) tmrClkFreq * 60 * cmpTmr.encCycLen;
-  uint64_t d = ((uint64_t) cmpTmr.cycleClocks * cmpTmr.preScale * syncEncoder);
-  printf("n %lld d %lld\n", n, d);
-  uint16_t rpm = (uint16_t) (n / d);
-  printf("%d rpm\n", rpm);
- }
- 
-#if ENCODER_TEST
-
- else if (ch == 's')		/* start encoder */
- {
-  newline();
-  testEncoderStart();
- }
- else if (ch == 'r')		/* reverse encoder */
- {
-  encRev ^= 1;
-  printf("\nencoder reverse %d\n", encRev);
- }
- else if (ch == 'q')		/* stop encoder */
- {
-  newline();
-  testEncoderStop();
- }
- else if (ch == 'l')
- {
-  if (query(&getnum, "encoder [%d] lines : ", encLines))
-  {
-   encLines = val;
-   encPulse = encLines * 4;
-   syncEncoder = encPulse;
-  }
- }
- else if (ch == 'R')
- {
-  newline();
-  if (testPulseMin != 0)
-  {
-   printf("pulseMin %ld period %u usec encLines %d encPulse %d\n",
-	  testPulseMin, (uint16_t) (USEC_MIN / testPulseMin),
-	  encLines, encPulse);
-   rpm = (unsigned int) (testPulseMin / encPulse);
-  }
-  if (query(&getnum, "rpm [%d]: ", rpm))
-  {
-   rpm = val;
-  }
-  /*
-    usecPulse = (usec / min) / ((rev / min) * (pulse / rev))
-    revMin = (usec / min) / ((usec / pulse) * (pulse / rev))
-  */
-  uint32_t pulseMin = (uint32_t) rpm * encPulse;
-  if (testPulseMin != pulseMin)
-  {
-   uint16_t period = (uint16_t) (USEC_MIN / pulseMin);
-   printf("\nrpm %d period %u usec encLines %d encPulse %d\n",
-	  rpm, period, encLines, encPulse);
-
-   uint32_t tmrClkFreq = HAL_RCC_GetPCLK2Freq();
-   printf("tmrClkFreq %ld\n", tmrClkFreq);
-   uint64_t clksMin = (uint64_t) tmrClkFreq * 60;
-   uint32_t clocksPulse = (uint32_t) (clksMin / pulseMin);
-   uint16_t preScaler = (uint16_t) (clocksPulse >> 16);
-
-   if ((clocksPulse & 0xffff) != 0)
-    preScaler += 1;
-   uint16_t count = (uint16_t) (clocksPulse / preScaler);
-
-   printf("clocksPulse %ld preScaler %d count %d\n",
-	  clocksPulse, preScaler, count);
-
-   preScaler -= 1;
-   count -= 1;
-
-   testPulseMin = pulseMin;
-   testEncPreScaler = preScaler;
-   testEncCount = count;
-
-   testEncoderStop();
-   testEncoderStart();
-  }
+  rmsTestInit();
+  rmsTest();
  }
 
 #endif
@@ -271,6 +148,7 @@ void lclcmd(int ch)
     putBufChar(ch);
     break;
    }
+   p++;
   }
   if (port != 0)
   {
@@ -359,8 +237,10 @@ void lclcmd(int ch)
    i2cInfo(I2C1, "I2C1");
   if (val & 0x40000)
    usartInfo(DBGPORT, "DBG");
+#if defined(REMPORT)
   if (val & 0x80000)
    usartInfo(REMPORT, "REM");
+#endif
  }
 #endif
  
@@ -519,4 +399,3 @@ void lclcmd(int ch)
   tmrInfo(TIM4);
  }
 }
-#endif

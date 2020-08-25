@@ -68,6 +68,8 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
+#if !defined(ARDUINO_ARCH_STM32)
+ 
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -75,45 +77,31 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
+#endif
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
 #define Led_Pin GPIO_PIN_13
 #define Led_GPIO_Port GPIOC
-#define Index_Pin GPIO_PIN_0
-#define Index_GPIO_Port GPIOA
-#define ExtI_Pin GPIO_PIN_1
-#define ExtI_GPIO_Port GPIOA
-#define ZFlag_Pin GPIO_PIN_2
-#define ZFlag_GPIO_Port GPIOA
-#define XFlag_Pin GPIO_PIN_3
-#define XFlag_GPIO_Port GPIOA
-#define SPI_SEL_Pin GPIO_PIN_4
-#define SPI_SEL_GPIO_Port GPIOA
-#define Dbg5_Pin GPIO_PIN_0
-#define Dbg5_GPIO_Port GPIOB
-#define Dbg4_Pin GPIO_PIN_1
+#define Dbg5_Pin GPIO_PIN_4
+#define Dbg5_GPIO_Port GPIOA
+#define Dbg6_Pin GPIO_PIN_5
+#define Dbg6_GPIO_Port GPIOA
+#define Dbg7_Pin GPIO_PIN_6
+#define Dbg7_GPIO_Port GPIOA
+#define Dbg8_Pin GPIO_PIN_7
+#define Dbg8_GPIO_Port GPIOA
+#define Dbg4_Pin GPIO_PIN_0
 #define Dbg4_GPIO_Port GPIOB
-#define Dbg3_Pin GPIO_PIN_12
-#define Dbg3_GPIO_Port GPIOB
-#define Dbg2_Pin GPIO_PIN_13
+#define Dbg0_Pin GPIO_PIN_6
+#define Dbg0_GPIO_Port GPIOB
+#define Dbg1_Pin GPIO_PIN_7
+#define Dbg1_GPIO_Port GPIOB
+#define Dbg2_Pin GPIO_PIN_8
 #define Dbg2_GPIO_Port GPIOB
-#define A_Pin GPIO_PIN_14
-#define A_GPIO_Port GPIOB
-#define A_EXTI_IRQn EXTI15_10_IRQn
-#define B_Pin GPIO_PIN_15
-#define B_GPIO_Port GPIOB
-#define B_EXTI_IRQn EXTI15_10_IRQn
-#define Dbg1_Pin GPIO_PIN_8
-#define Dbg1_GPIO_Port GPIOA
-#define Dbg0_Pin GPIO_PIN_15
-#define Dbg0_GPIO_Port GPIOA
-#define SyncOut_Pin GPIO_PIN_4
-#define SyncOut_GPIO_Port GPIOB
-#define IndexTest_Pin GPIO_PIN_5
-#define IndexTest_GPIO_Port GPIOB
-#define Encoder_Pin GPIO_PIN_7
-#define Encoder_GPIO_Port GPIOB
+#define Dbg3_Pin GPIO_PIN_9
+#define Dbg3_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

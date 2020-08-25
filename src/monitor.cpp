@@ -1,6 +1,6 @@
 /******************************************************************************/
 #if !defined(INCLUDE)
-#define __SYNC__
+#define __MONITOR__
 #include "stm32f1xx_hal.h"
 
 #include <stdio.h>
@@ -11,18 +11,19 @@
 #include <limits.h>
 #include <stdarg.h>
 
-#include "remvar.h"
 #include "serialio.h"
+
+#include "adc.h"
 
 #ifdef EXT
 #undef EXT
 #endif
 
 #define EXT
-#include "sync.h"
+#include "monitor.h"
 #endif /* INCLUDE */
 
-#if defined(__SYNC_INC__)	// <-
+#if defined(__MONITOR_INC__)	// <-
 
 #if !defined(EXT)
 #define EXT extern
@@ -32,97 +33,10 @@
 #include "config.h"
 #include "dbg.h"
 
-#define DBG_CMP 1		/* debug capture timer */
-#define DBG_CMP_TIME 1		/* debug capture interrupt timing */
-#define DBG_INT 1		/* debug internal timer */
-#define DBG_COUNT 1		/* debug count input and output pulses */
-
-#define ARRAY 1			/* use array for cycle length */
-#define ARRAY_LEN 2048		/* size of array */
-#define START_DELAY 2		/* delay internal start */
-
-#define CALC_STEP_WIDTH(x) ((uint16_t) ((cfgFcy * x) / 1000000l))
-
-typedef uint8_t boolean;
-
-#include "dbgtrk.h"
-
 unsigned int millis(void);
 
-#define DIR_POS      1           /* 0x01 positive direction */
-#define DIR_NEG      -1          /* 0x-1 negative direction */
-
-#define MAX_TIMEOUT UINT_MAX
-#define REMCMD_TIMEOUT 1000U
-#define INDEX_TIMEOUT 1500U
-
-EXT unsigned int remcmdUpdateTime;
-EXT unsigned int remcmdTimeout;
-
-EXT uint32_t cfgFcy;
-EXT uint64_t clocksMin;		/* timer clocks per minute */
-
-EXT int16_t encTmo;		/* encoder pulse timeout */
-
-typedef struct
-{
- uint32_t encCount;		/* encoder counts */
- uint32_t intCount;		/* internal counts */
- uint32_t cycleCount;		/* encoder cycle counter */
- int missedStart;		/* start flag missed */
- 
- int16_t encCycLen;		/* encoder cycle length */
- int16_t encPulse;		/* encoder pulse number */
- uint16_t lastEnc;		/* last encoder capture */
- uint32_t encClocks;		/* clocks in current encoder cycle */
- uint32_t cycleClocks;		/* estimated clocks in cycle */
-
- uint16_t preScale;		/* counter pre scaler */
-
- int intCycLen;			/* internal cycle length */
- int intPulse;			/* internal pulse number */
- uint32_t intClocks;		/* clocks in current internal cycle */
-
- boolean startInt;		/* start internal timer */
- boolean measure;		/* measure flag */
- boolean stop;			/* stop flag */
-
-#if START_DELAY
- int16_t startDelay;		/* initial delay */
-#endif
-
-#if ARRAY
- uint16_t delta[ARRAY_LEN];	/* saved delta values */
-#endif
-} T_CMP_TMR, *P_CMP_TMR;
-
-EXT T_CMP_TMR cmpTmr;
-
-void encoderSetup(void);
-void encoderMeasure(void);
-void encoderCalculate(void);
-void encoderStart(void);
-void encoderStop(void);
-
-#if ENCODER_TEST
-
-EXT uint32_t testPulseMin;
-EXT uint16_t testEncPreScaler;
-EXT uint16_t testEncCount;
-EXT int rpm;
-EXT char encRun;
-EXT int encRunCount;
-EXT int encCounter;
-EXT int encLines;
-EXT int encPulse;
-EXT int encRevCounter;
-EXT char encState;
-EXT char encRev;
-
-void testEncoderStart(void);
-void testEncoderStop(void);
-
-#endif
+void adcRead();
+void adcStatus();
 
 typedef struct
 {
@@ -147,6 +61,9 @@ void tmrInfo(TIM_TypeDef *tmr);
 void extiInfo(void);
 void usartInfo(USART_TypeDef *usart, const char *str);
 void i2cInfo(I2C_TypeDef *i2c, const char *str);
+void adcInfo(ADC_TypeDef *adc, char n);
+void dmaInfo(DMA_TypeDef *dma);
+void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
 
 char portName(GPIO_TypeDef *port);
 char timNum(TIM_TypeDef *tmr);
@@ -195,7 +112,7 @@ typedef union
 } BITWORD;
 
 #endif	// ->
-#ifdef __SYNC__
+#ifdef __MONITOR__
 
 extern uint32_t uwTick;
 
@@ -204,191 +121,87 @@ unsigned int millis(void)
  return((unsigned int) uwTick);
 }
 
-void encoderSetup(void)
+uint32_t buf[8];
+
+void adcRead()
 {
- cmpTmr.encCycLen = syncCycle;
- cmpTmr.encCycLen = syncOutput;
- cmpTmr.preScale = syncPrescaler;
-}
-
-void encoderMeasure(void)
-{
- printf("encoderMeasure\n");
- encoderStop();			/* stop encoder */
-
-#if ARRAY
- cmpTmr.encCycLen = ARRAY_LEN;	/* initialize cycle length */
- cmpTmr.cycleClocks = 0;	/* clear cycle clocks */
- cmpTmr.lastEnc = 0;		/* clear last encoder vale */
- memset(&cmpTmr.delta, 0, sizeof(cmpTmr.delta)); /* clear delta array */
-#else
- cmpTmr.encCycLen = 2048;	/* init cycle length */
-#endif
-
- cmpTmr.encPulse = cmpTmr.encCycLen; /* set number to count */
- cmpTmr.measure = 1;		/* set measurement flag */
-
- cmpTmrClrIE();			/* disable update interrupts */
- cmpTmrCntClr();		/* clear counter */
- cmpTmrSet(0xffff);		/* set count to maximum */
- cmpTmrScl(0);			/* set prescaler */
- cmpTmrCap1EnaSet();		/* enable capture from encoer */
- cmpTmrCap1SetIE();		/* enable capture interrupt */
- cmpTmr.intClocks = 0;		/* clear clocks in current cycle */
- cmpTmrStart();			/* start capture timer */
-}
-
-void encoderCalculate(void)
-{
- printf("encoderCalculate\n");
- uint64_t n = clocksMin * cmpTmr.encCycLen;
- uint64_t d = ((uint64_t) cmpTmr.cycleClocks * syncEncoder);
- uint16_t rpm = (uint16_t) (n / d);
-
- uint32_t pulseMinIn = syncEncoder * rpm;
- uint32_t pulseMinOut = (pulseMinIn * syncOutput) / syncCycle;
- uint32_t clocksPulse = (uint32_t) (clocksMin / pulseMinOut);
- syncPrescaler = clocksPulse >> 16;
- printf("n %lld d %lld rpm %d preScaler %d\n",
-	n, d, rpm, syncPrescaler);
- syncPrescaler += 1;
-}
-
-void encoderStart(void)
-{
- encoderStop();			/* stop encoder */
-
- cmpTmr.encCycLen = syncCycle;
- cmpTmr.intCycLen = syncOutput;
- cmpTmr.preScale = syncPrescaler;
-
- printf("encoderStart cycle %d output %d preScale %u\n",
-	cmpTmr.encCycLen, cmpTmr.intCycLen, cmpTmr.preScale);
- intTmrCntClr();		/* clear counter */
-#if START_DELAY == 0
- intTmrSet(0xffff);		/* set count to maximum */
-#else
- cmpTmr.startDelay = (uint16_t) ((cfgFcy * START_DELAY) / 1000000l - 1);
- intTmrSet(cmpTmr.startDelay);	/* set to initial delay */
-#endif
- intTmrScl(cmpTmr.preScale - 1); /* set prescaler */
- intTmrSetIE();			/* enable interrupts */
-
-#if ARRAY
- cmpTmr.cycleClocks = 0;	/* clear cycle clocks */
- cmpTmr.lastEnc = 0;		/* clear last encoder vale */
- memset(&cmpTmr.delta, 0, sizeof(cmpTmr.delta)); /* clear delta array */
-#endif
-
- cmpTmr.encClocks = 0;		/* clear clocks in current cycle */
-
- cmpTmr.encPulse = cmpTmr.encCycLen; /* initialize encoder counter */
- cmpTmr.intPulse = cmpTmr.intCycLen; /* initialize internal counter */
-
-#if DBG_COUNT
- cmpTmr.encCount = 0;		/* clear counters */
- cmpTmr.intCount = 0;
- cmpTmr.cycleCount = 0;
- cmpTmr.missedStart = 0;	/* clear missed flag */
-#endif
-
- cmpTmrClrIE();			/* disable update interrupts */
- cmpTmrCntClr();		/* clear counter */
- cmpTmrSet(0xffff);		/* set count to maximum */
- cmpTmrScl(cmpTmr.preScale - 1); /* set prescaler */
- cmpTmrCap1EnaSet();		/* enable capture from encoer */
- cmpTmrCap1SetIE();		/* enable capture interrupt */
- cmpTmr.intClocks = 0;		/* clear clocks in current cycle */
- cmpTmr.measure = 0;		/* clear measure flag */
- cmpTmr.stop = 0;		/* clear stop flag */
- cmpTmr.startInt = 1;		/* start internal timer */
- if (DBG_INT)
-  dbgCycEndSet();
-#if DBGTRK
- dbgTrk = true;
-#endif
- cmpTmrStart();			/* start capture timer */
-
-#if 0
- printf("internal timer\n");
- tmrInfo(INT_TIM);
- printf("compare timer\n");
- tmrInfo(CMP_TIM);
-#endif
-}
-
-void encoderStop(void)
-{
- printf("encoder stop\n");
- cmpTmrStop();			/* stop timer */
- cmpTmrCntClr();
- cmpTmrClrIE();			/* clear interrupts */
- cmpTmrClrIF();
-
- cmpTmrCap1ClrIE();		/* clear capture 1 interrupts */
- cmpTmrCap1ClrIF();
- cmpTmrOCP1Clr();
-
-#if 0
- cmpTmrCap2ClrIE();		/* clear capture 2 interrupts */
- cmpTmrCap2ClrIF();
- cmpTmrOCP2Clr();
-#endif
-
-#if 0
- printf("compare timer\n");
- tmrInfo(CMP_TIM);
-#endif
-
- intTmrStop();
- intTmrCntClr();
- intTmrClrIE();
- intTmrClrIF();
-#if INT_TMR_PWM
- intTmrPWMDis();
-#endif
-}
-
-#if ENCODER_TEST
-
-void testEncoderStart(void)
-{
- if (testEncCount != 0)
- {
-  encState = 0;
-  encCounter = 0;
-  encRevCounter = 0;
-  encRunCount = 0;
-  encRun = 1;
-
-  aTestClr();
-  bTestClr();
-  indexTestClr();
+ HAL_StatusTypeDef status;
  
-  encTestTmrScl(testEncPreScaler);
-  encTestTmrMax(testEncCount);
-  encTestTmrSetIE();
-  encTestTmrStart();
+ adcInfo(ADC1, 1);
+ adcInfo(ADC2, 2);
+ dmaInfo(DMA1);
+ dmaChannelInfo(DMA1_Channel1, 1);
+ 
+ uint32_t tmp = ADC1->SQR3;
+ printf("0 - %d 1 - %d\n", (int) (tmp & 0x1f), (int) ((tmp >> 5) & 0x1f));
+ // printf("SQR1 %08x SQR2 %08x SQR3 %08x\n",
+ //	(unsigned int) ADC1->SQR1, (unsigned int) ADC1->SQR2,
+ //	(unsigned int) ADC1->SQR3);
 
-  printf("test encoder start\n");
- }
- else
+#if 0
+ ADC2->CR2 &= ~ADC_CR2_EXTSEL_Msk;
+ ADC2->CR2 |= ADC_CR2_EXTSEL_2 | ADC_CR2_EXTSEL_1 | ADC_CR2_EXTSEL_0 | ADC_CR2_ADON;
+
+ adcInfo(ADC2, 2);
+
+ status = HAL_ADC_Start(&hadc1);
+ printf("start status %d\n", status);
+ status = HAL_ADC_PollForConversion(&hadc1, 100);
+ printf("poll status %d\n", status);
+#else
+ memset(buf, 0, sizeof(buf));
+ uint32_t *p;
+ unsigned int count;
+ p = buf;
+ count = sizeof(buf) / sizeof(uint32_t);
+ while (1)
  {
-  printf("encoder count not initialized\n");
+  printf("%08x ", (unsigned int) *p++);
+  count -= 1;
+  if (count == 0)
+  {
+   printf("\n");
+   break;
+  }
  }
-}
-
-void testEncoderStop(void)
-{
- encRun = 0;
- encTestTmrStop();
- encTestTmrClr();
- encTestTmrClrIE();
- encTestTmrClrIF();
- printf("encoder stop\n");
-}
-
+ status = HAL_ADCEx_MultiModeStart_DMA(&hadc1, buf, 2);
+ printf("dma status %d\n", status);
+ p = buf;
+ count = sizeof(buf) / sizeof(uint32_t);
+ while (1)
+ {
+  printf("%08x ", (unsigned int) *p++);
+  count -= 1;
+  if (count == 0)
+  {
+   printf("\n");
+   break;
+  }
+ }
+ printf("buf %8x %8x\n", (unsigned int) buf[0], (unsigned int) buf[1]);
 #endif
+
+ adcInfo(ADC1, 1);
+ adcInfo(ADC2, 2);
+ dmaInfo(DMA1);
+ dmaChannelInfo(DMA1_Channel1, 1);
+}
+
+void adcStatus()
+{
+ printf("%8x buf %8x %8x\n",
+	(unsigned int) buf, (unsigned int) buf[0], (unsigned int) buf[1]);
+ newline();
+ adcInfo(ADC1, 1);
+ newline();
+ adcInfo(ADC2, 2);
+ newline();
+ newline();
+ dmaInfo(DMA1);
+ newline();
+ dmaChannelInfo(DMA1_Channel1, 1);
+}
+
 typedef struct
 {
  GPIO_TypeDef *port;
@@ -752,6 +565,79 @@ void i2cInfo(I2C_TypeDef *i2c, const char *str)
  printf("DR    %8x ",(unsigned int) i2c->DR);
  printf("CCR   %8x\n",(unsigned int) i2c->CCR);
  printf("TRISE %8x\n",(unsigned int) i2c->TRISE);
+ flushBuf();
+}
+
+void adcInfo(ADC_TypeDef *adc, char n)
+{
+ printf("ADC%d %x  DR %0x8\n",
+	n, (unsigned int) adc, (unsigned int) &adc->DR);
+ printf("SR    %8x\n",(unsigned int) adc->SR);
+ printf("CR1   %8x ",(unsigned int) adc->CR1);
+ printf("CR2   %8x\n",(unsigned int) adc->CR2);
+ printf("HTR   %8x ",(unsigned int) adc->HTR);
+ printf("LTR   %8x\n",(unsigned int) adc->LTR);
+ printf("L     %8x ",(unsigned int) ((adc->SQR1 >> 20) & 0xf));
+ printf("DR    %8x\n",(unsigned int) adc->DR);
+ int i;
+ printf("     ");
+ for (i = 0; i < 16; i++)
+  printf(" %2d", i);
+ printf("\n");
+
+ printf("SMPR ");
+ int32_t tmp = adc->SMPR2;
+ for (i = 0; i < 10; i++)
+ {
+  printf(" %2u", (unsigned int) (tmp & 7));
+  tmp >>= 3;
+ }
+ tmp = adc->SMPR1;
+ for (i = 0; i < 6; i++)
+ {
+  printf(" %2u", (unsigned int) (tmp & 7));
+  tmp >>= 3;
+ }
+ printf("\n");
+
+ printf("SQR  ");
+ tmp = adc->SQR3;
+ for (i = 0; i < 6; i++)
+ {
+  printf(" %2u", (unsigned int) (tmp & 7));
+  tmp >>= 5;
+ }
+ tmp = adc->SQR2;
+ for (i = 0; i < 6; i++)
+ {
+  printf(" %2u", (unsigned int) (tmp & 7));
+  tmp >>= 5;
+ }
+ tmp = adc->SQR1;
+ for (i = 0; i < 4; i++)
+ {
+  printf(" %2u", (unsigned int) (tmp & 7));
+  tmp >>= 5;
+ }
+ printf("\n");
+ flushBuf();
+}
+
+void dmaInfo(DMA_TypeDef *dma)
+{
+ printf("DMA1 %08x\n", (unsigned int) dma);
+ printf("ISR   %8x ",(unsigned int) dma->ISR);
+ printf("IFCR  %8x\n",(unsigned int) dma->IFCR);
+ flushBuf();
+}
+
+void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n)
+{
+ printf("DMA_Channel%d %08x\n", n, (unsigned int) dmaC);
+ printf("CCR   %8x ",(unsigned int) dmaC->CCR);
+ printf("CNDTR %8x\n",(unsigned int) dmaC->CNDTR);
+ printf("CPAR  %8x ",(unsigned int) dmaC->CPAR);
+ printf("CMAR  %8x\n",(unsigned int) dmaC->CMAR);
  flushBuf();
 }
 
