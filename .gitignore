@@ -39,7 +39,8 @@ cscope*
 *#
 *.gpdsc
 /Debug/
-
 *.ftl
-
 *.ftl_save
+
+Tmp/*
+
