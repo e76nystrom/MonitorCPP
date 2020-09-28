@@ -38,13 +38,13 @@
 #if defined(ARDUINO_ARCH_STM32)
 #include "monitor.h"
 #endif	/* ARDUINO_ARCH_STM32 */
-#include "current.h"
 
-#if defined(STM32MON)
+#include "current.h"
 
 #define DMA 0
 #define SIMULTANEOUS 0
 
+#if defined(STM32MON)
 #if 0
 extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
@@ -362,6 +362,12 @@ unsigned int millis(void);
  
 #endif /* __CURRENT_INC__ */	// ->
 #ifdef __CURRENT__
+
+#if defined(ARDUINO_ARCH_STM32)
+#define putDbg(ch) DBGPORT.write(ch);
+#else
+#define putDbg(ch);
+#endif /* ARDUINO_ARCH_STM32 */
 
 unsigned int dmaInts;
 unsigned int adc1Ints;
@@ -700,7 +706,7 @@ void updatePower(P_RMSPWR pwr)
   __enable_irq();
   dbg0Clr();
   pwr->displayCount -= 1;
-  putx('+');
+  putDbg('+');
   if (pwr->displayCount <= 0)
   {
    pwr->displayCount = DISPLAY_INTERVAL;
@@ -714,14 +720,14 @@ void updatePower(P_RMSPWR pwr)
 }
 #endif
 
-void printBuf(void)
+void printBufC(void)
 {
  int count = sizeof(buf) / sizeof(uint16_t);
  uint16_t *p = (uint16_t *) buf;
  int col = 0;
  while (1)
  {
-  val = *p++;
+  uint16_t val = *p++;
   val = (val * 3300) / 4095;
   printf("%4d ", (int) val);
   count -= 1;
@@ -984,7 +990,7 @@ void adcRead1(void)
 #endif /* HAL */
 
  cfgInfo();
- printBuf();
+ printBufC();
 
 #if HAL == 0
  if (HAL == 0)
@@ -1075,7 +1081,7 @@ void adcStatus(void)
  dmaChannelInfo(DMA1_Channel1, 1);
  newline();
 #endif
- printBuf();
+ printBufC();
 }
 
 void adcTmrTest(void)
@@ -1098,11 +1104,7 @@ void adcTmrTestStop(void)
 #if 0
 extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-#if defined(ARDUINO_ARCH_STM32)
- DBGPORT.write('*');
-#else
- putx('*');
-#endif 
+ putDbg('*');
 }
 #endif
 
@@ -1214,7 +1216,7 @@ extern "C" void TIM1_UP_IRQHandler(void)
 	pwrData->cSum = pwr->c.sum;
 	pwrData->pwrSum = pwr->pwrSum;
 	pwr->pwrBuf.count += 1;
-	putx('.');
+	putDbg('+');
        }
        pwr->v.sum = 0;
        pwr->c.sum = 0;
