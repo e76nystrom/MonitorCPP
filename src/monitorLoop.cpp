@@ -98,7 +98,7 @@ void monitorLoopSetup(void)
 
 #define LED_DELAY 500
 
-#define PWR_INTERVAL (1 * 1000)
+#define PWR_INTERVAL (500)
 
 int16_t monitorLoop(void)
 {
@@ -266,7 +266,7 @@ int16_t monitorLoop(void)
 
    if (pwrActive)
    {
-    if ((t - pwrUpdTime) > PWR_INTERVAL)
+    if ((t - pwrUpdTime) >= PWR_INTERVAL)
     {
      pwrUpdTime = t;
      for (i = 0; i < maxChan; i++)
@@ -277,8 +277,15 @@ int16_t monitorLoop(void)
    
     for (i = 0; i < maxChan; i++)
     {
-     P_RMSPWR pwr = chanCfg[i].pwr;
-     updatePower(pwr);
+     P_CHANCFG chan = &chanCfg[i];
+     if (chan->type == POWER_CHAN)
+     {
+      updatePower(chan->pwr);
+     }
+     else if (chan->type == CURRENT_CHAN)
+     {
+      updateCurrent(chan->cur);
+     }
 #if 0
      if (pwr->done)
      {

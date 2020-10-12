@@ -69,6 +69,12 @@ void lclcmd(int ch)
  {
   printf("\ncharOverflow %d\n", charOverflow);
  }
+ else if (ch == 'e')
+ {
+  adcTmrStop();
+  adcTmrClrIE();
+  printf("\ntimer stopped\n");
+ }
  else if (ch == 'a')
  {
   newline();
@@ -89,6 +95,37 @@ void lclcmd(int ch)
   newline();
   rmsTestInit();
   rmsTest();
+ }
+ else if (ch == 'c')
+ {
+  testIndex = 0;
+ }
+ else if (ch == 'd')
+ {
+  newline();
+  int count = 2 * SAMPLES_CYCLE;
+  int16_t *p = testData;
+  int col = 0;
+  int offset = testOffset >> SAMPLE_SHIFT;
+  while (1)
+  {
+   uint16_t val = *p++;
+
+   printf("%5d ", (int) (val - offset));
+   count -= 1;
+   col++;
+   if (col == 8)
+   {
+    col = 0;
+    printf("\n");
+   }
+   if (count == 0)
+   {
+    if (col != 0)
+     printf("\n");
+    break;
+   }
+  }
  }
 
 #endif

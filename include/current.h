@@ -5,6 +5,7 @@
 #endif	/* EXT */
 
 #define PWR_SIZE 32
+#define CUR_SIZE 32
 #define INITIAL_COUNT 10000
 #define CYCLE_COUNT 60
 #define SAMPLE_SHIFT 8
@@ -18,6 +19,8 @@
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
+enum curState {initCur, avgCur, curDone};
+enum CHAN_TYPE {POWER_CHAN, CURRENT_CHAN};
 
 typedef struct s_adcData
 {
@@ -41,6 +44,8 @@ typedef struct s_rms
  int value;			/* value after offset operation */
  int offset;			/* filtered offset */
  int sum;			/* sum of squares */
+ int min;
+ int max;
 } T_RMS, *P_RMS;
 
 #if 0
@@ -51,7 +56,7 @@ typedef struct s_buffer
  int count;			/* number in buffer */
  T_ADC_DATA buf[PWR_SIZE];	/* buffer */
 } T_BUFFER, *P_BUFFER;
-#endif
+#endif	/* 0 */
 
 typedef struct s_pwrData
 {
@@ -70,20 +75,21 @@ typedef struct s_pwrBuf
  T_PWR_DATA buf[PWR_SIZE];	/* buffer */
 } T_PWR_BUF, *P_PWR_BUF;
 
-#define DISPLAY_INTERVAL 12
+#define DISPLAY_INTERVAL (12 * 1000)
+#define MEASURE_INTERVAL (60 * 1000)
 
 typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
  bool lastBelow;		/* last sample below voltage offset */
- int cycleCount;
+ int cycleCount;		/* cycle counter */
  T_RMS v;			/* voltage */
  T_RMS c;			/* current */
  int samples;			/* sample counter */
  int pwrSum;			/* power sum */
  int sampleCount;		/* sample count for last reading */
- int displayCount;		/* counter for results display */
+ int displayTime;		/* time for last display */
  int pwrAccum;			/* accumulator for power */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
@@ -94,45 +100,88 @@ typedef struct s_rmsPwr
  bool update;			/* time to update */
  bool done;			/* update done */
  struct s_chanCfg *cfg;		/* channel configuration */
-// T_BUFFER b;			/* buffer */
  T_PWR_BUF pwrBuf;
 } T_RMSPWR, *P_RMSPWR;
 
+typedef struct s_curData
+{
+ uint32_t time;			/* time of reading */
+ int sum;			/* current sum of squares */
+ int samples;			/* samples */
+ int offset;
+ int min;
+ int max;
+} T_CUR_DATA, *P_CUR_DATA;
+
+typedef struct s_curBuf
+{
+ int filPtr;			/* fill pointer */
+ int empPtr;			/* empty pointer */
+ int count;			/* number in buffer */
+ T_CUR_DATA buf[PWR_SIZE];	/* buffer */
+} T_CUR_BUF, *P_CUR_BUF;
+
+typedef struct s_rmsCur
+{
+ curState state;		/* curent measurement state */
+ curState lastState;		/* last curent measurement state */
+ T_RMS c;			/* current */
+ int samples;			/* sample counter */
+ int rms;			/* rms current */
+ uint64_t rmsSum;		/* sum for rms calculation */
+ int measureTime;		/* time of last measurement */
+ int rmsSamples;		/* samples for rms calculation */
+ int minuteRms;			/* rms value for one minute */
+ int displayTime;		/* time of last display */
+ int minuteCount;
+ struct s_chanCfg *cfg;		/* channel configuration */
+ T_CUR_BUF curBuf;
+} T_RMSCUR, *P_RMSCUR;
+
 typedef struct s_chanCfg
 {
- int count;			/* number of readings to take */
- int vltChan;			/* voltage channel */
+ CHAN_TYPE type;		/* channel type */
  int curChan;			/* current channel */
- P_RMSPWR pwr;			/* rms power data */
-// P_BUFFER buf;			/* buffer */
+ int vltChan;			/* voltage channel */
+ union
+ {
+  P_RMSPWR pwr;			/* rms power data */
+  P_RMSCUR cur;			/* rms current data */
+ };
 } T_CHANCFG, *P_CHANCFG;
 
-#define MAX_CHAN 2
+#define MAX_CHAN 4
+#define MAX_CHAN_POWER 2
+#define MAX_CHAN_CURRENT 4
 
 EXT uint32_t clockFreq;
 EXT uint32_t tmrFreq;
-EXT T_RMSPWR rmsPower[MAX_CHAN];
+EXT T_RMSPWR rmsPower[MAX_CHAN_POWER];
+EXT T_RMSCUR rmsCurrent[MAX_CHAN_CURRENT];
 
 EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
 EXT T_CHANCFG chanCfg[MAX_CHAN];
-#if 0
-EXT uint16_t *adc1Buf;
-EXT uint16_t *adc2Buf;
-#else
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
-#endif
+
+EXT int testIndex;
+EXT int testChan;
+EXT int16_t testData[2 * SAMPLES_CYCLE];
+EXT int testOffset;
 
 void rmsTestInit(void);
 void rmsTest(void);
 
 void rmsCfgInit(void);
-#if 0
+//#define POLL_UPDATE_POWER
+#if defined(POLL_UPDATE_POWER)
 void rmsUpdate(int sample, P_RMS rms);
-#endif
+#else
 void updatePower(P_RMSPWR pwr);
+void updateCurrent(P_RMSCUR cur);
+#endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
 void adcRun(void);
@@ -179,8 +228,9 @@ inline uint32_t interval(uint32_t start, uint32_t end)
   return(start - end);
 }
 
-#if 1
-#define cycleCtr 1
+#define CYCLE_CTR
+#if defined(CYCLE_CTR)
+#define cycleCtr 0
 #define DWT_CTRL_CycCntEna DWT_CTRL_CYCCNTENA_Msk
 inline void resetCnt()
 {
@@ -207,14 +257,14 @@ inline void getCycles(uint32_t *val)
 {
  *val = DWT->CYCCNT;
 }
-#else
+#else  /* CYCLE_CTR */
 #define cycleCtr 0
 inline void resetCnt() {}
 inline void startCnt() {}
 inline void stopCnt() {}
 inline unsigned int getCycles() {return(0);}
 inline void getCycles(uint32_t *val) {};
-#endif
+#endif	/* CYCLE_CTR */
 
 typedef union
 {
