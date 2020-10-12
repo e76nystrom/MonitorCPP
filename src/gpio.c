@@ -30,9 +30,9 @@
 
 /* USER CODE END 1 */
 
-/** Configure pins as 
-        * Analog 
-        * Input 
+/** Configure pins as
+        * Analog
+        * Input
         * Output
         * EVENT_OUT
         * EXTI
@@ -55,7 +55,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, Dbg5_Pin|Dbg6_Pin|Dbg7_Pin|Dbg8_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, Dbg4_Pin|Dbg0_Pin|Dbg1_Pin|Dbg2_Pin 
+  HAL_GPIO_WritePin(GPIOB, Dbg4_Pin|Dbg0_Pin|Dbg1_Pin|Dbg2_Pin
                           |Dbg3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PtPin */
@@ -72,9 +72,9 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PBPin PBPin PBPin PBPin 
+  /*Configure GPIO pins : PBPin PBPin PBPin PBPin
                            PBPin */
-  GPIO_InitStruct.Pin = Dbg4_Pin|Dbg0_Pin|Dbg1_Pin|Dbg2_Pin 
+  GPIO_InitStruct.Pin = Dbg4_Pin|Dbg0_Pin|Dbg1_Pin|Dbg2_Pin
                           |Dbg3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;

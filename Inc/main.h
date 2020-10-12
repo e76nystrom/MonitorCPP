@@ -82,32 +82,26 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
-#define B1_Pin GPIO_PIN_13
-#define B1_GPIO_Port GPIOC
-#define USART_TX_Pin GPIO_PIN_2
-#define USART_TX_GPIO_Port GPIOA
-#define USART_RX_Pin GPIO_PIN_3
-#define USART_RX_GPIO_Port GPIOA
-#define Led_Pin GPIO_PIN_5
-#define Led_GPIO_Port GPIOA
-#define Dbg0_Pin GPIO_PIN_5
-#define Dbg0_GPIO_Port GPIOC
-#define Dbg1_Pin GPIO_PIN_6
-#define Dbg1_GPIO_Port GPIOC
-#define Dbg2_Pin GPIO_PIN_8
-#define Dbg2_GPIO_Port GPIOC
-#define Dbg3_Pin GPIO_PIN_9
-#define Dbg3_GPIO_Port GPIOC
-#define TMS_Pin GPIO_PIN_13
-#define TMS_GPIO_Port GPIOA
-#define TCK_Pin GPIO_PIN_14
-#define TCK_GPIO_Port GPIOA
-#define SWO_Pin GPIO_PIN_3
-#define SWO_GPIO_Port GPIOB
-#define Dbg4_Pin GPIO_PIN_8
+#define Led_Pin GPIO_PIN_13
+#define Led_GPIO_Port GPIOC
+#define Dbg5_Pin GPIO_PIN_4
+#define Dbg5_GPIO_Port GPIOA
+#define Dbg6_Pin GPIO_PIN_5
+#define Dbg6_GPIO_Port GPIOA
+#define Dbg7_Pin GPIO_PIN_6
+#define Dbg7_GPIO_Port GPIOA
+#define Dbg8_Pin GPIO_PIN_7
+#define Dbg8_GPIO_Port GPIOA
+#define Dbg4_Pin GPIO_PIN_0
 #define Dbg4_GPIO_Port GPIOB
-#define Dbg5_Pin GPIO_PIN_9
-#define Dbg5_GPIO_Port GPIOB
+#define Dbg0_Pin GPIO_PIN_6
+#define Dbg0_GPIO_Port GPIOB
+#define Dbg1_Pin GPIO_PIN_7
+#define Dbg1_GPIO_Port GPIOB
+#define Dbg2_Pin GPIO_PIN_8
+#define Dbg2_GPIO_Port GPIOB
+#define Dbg3_Pin GPIO_PIN_9
+#define Dbg3_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
