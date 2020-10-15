@@ -179,6 +179,7 @@ void rmsCfgInit(void);
 #if defined(POLL_UPDATE_POWER)
 void rmsUpdate(int sample, P_RMS rms);
 #else
+void currentUpdate();
 void updatePower(P_RMSPWR pwr);
 void updateCurrent(P_RMSCUR cur);
 #endif	/* POLL_UPDATE_POWER */

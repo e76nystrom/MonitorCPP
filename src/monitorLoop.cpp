@@ -286,18 +286,6 @@ int16_t monitorLoop(void)
      {
       updateCurrent(chan->cur);
      }
-#if 0
-     if (pwr->done)
-     {
-      printf("offset %d vRms %d v %5.3f\n",
-	     pwr->v.offset, pwr->vRms,
-	     ((pwr->vRms * (float) 3300) / 4095) / 1000);
-      printf("offset %d cRms %d c %5.3f\n",
-	     pwr->c.offset, pwr->cRms,
-	     ((pwr->cRms * (float) 3300) / 4095) / 1000);
-      pwr->done = false;
-     }
-#endif
     }
    }
 

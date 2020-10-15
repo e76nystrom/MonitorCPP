@@ -40,6 +40,13 @@ extern ADC_HandleTypeDef hadc2;
 void MX_ADC1_Init(void);
 void MX_ADC2_Init(void);
 
+#if defined(ARDUINO_ARCH_STM32)
+#define HAL_ADC_MspInit ADC_MspInit
+#define HAL_ADC_MspDeInit ADC_MspDeInit
+void ADC_MspInit(ADC_HandleTypeDef* adcHandle);
+void ADC_MspDeInit(ADC_HandleTypeDef* adcHandle);
+#endif
+
 /* USER CODE BEGIN Prototypes */
 
 /* USER CODE END Prototypes */

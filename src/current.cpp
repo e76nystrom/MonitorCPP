@@ -238,6 +238,7 @@ void rmsCfgInit(void);
 #if defined(POLL_UPDATE_POWER)
 void rmsUpdate(int sample, P_RMS rms);
 #else
+void currentUpdate();
 void updatePower(P_RMSPWR pwr);
 void updateCurrent(P_RMSCUR cur);
 #endif	/* POLL_UPDATE_POWER */
@@ -415,7 +416,8 @@ unsigned int millis(void);
 #ifdef __CURRENT__
 
 #if defined(ARDUINO_ARCH_STM32)
-#define putDbg(ch) DBGPORT.write(ch);
+//#define putDbg(ch) DBGPORT.write(ch);
+#define putDbg(ch)
 #else  /* ARDUINO_ARCH_STM32 */
 #define putDbg(ch) putx(ch)
 #endif /* ARDUINO_ARCH_STM32 */
@@ -446,9 +448,9 @@ bool updChannel;
 
 #endif	/* ARDUINO_ARCH_STM32 */
 
+#if !defined(ARDUINO_ARCH_STM32)
 extern uint32_t uwTick;
 
-#if !defined(ARDUINO_ARCH_STM32)
 unsigned int millis(void)
 {
  return((unsigned int) uwTick);
@@ -530,12 +532,15 @@ void rmsCfgInit(void)
  curChan = 0;			/* current channel */
 
  P_CHANCFG cfg = &chanCfg[0];
+ memset((void *) cfg, 0, sizeof(chanCfg));
 
  P_RMSPWR pwr = &rmsPower[0];
- memset((void *) pwr, 0, sizeof(T_RMSPWR));
+ memset((void *) pwr, 0, sizeof(rmsPower));
 
  cfg->type = POWER_CHAN;
  pwr->cfg = cfg;
+ pwr->state = initAvg;
+ pwr->lastState = initAvg;
  cfg->pwr = pwr;
  cfg->vltChan = ADC1_0;
  cfg->curChan = ADC2_0;
@@ -543,13 +548,14 @@ void rmsCfgInit(void)
  cfg++;
 
  P_RMSCUR cur = &rmsCurrent[0];
- memset((void *) cur, 0, sizeof(T_RMSCUR));
+ memset((void *) cur, 0, sizeof(rmsCurrent));
  
  cfg->type = CURRENT_CHAN;
  cur->cfg = cfg;
+ cur->state = initCur;
+ cur->lastState = initCur;
  cfg->cur = cur;
  cfg->curChan = ADC1_1;
- 
 }
 
 #if defined(POLL_UPDATE_POWER)
@@ -759,6 +765,25 @@ void updatePower(P_RMSPWR pwr)
 
 #else /* PoLL_UPDATE_POWER */
 
+void currentUpdate()
+{
+ if (pwrActive)
+ {
+  for (int i = 0; i < maxChan; i++)
+  {
+   P_CHANCFG chan = &chanCfg[i];
+   if (chan->type == POWER_CHAN)
+   {
+    updatePower(chan->pwr);
+   }
+   else if (chan->type == CURRENT_CHAN)
+   {
+    updateCurrent(chan->cur);
+   }
+  }
+ }
+}
+
 void updatePower(P_RMSPWR pwr)
 {
  while (pwr->pwrBuf.count != 0)
@@ -823,11 +848,17 @@ void updateCurrent(P_RMSCUR cur)
   if ((t - cur->measureTime) >= MEASURE_INTERVAL)
   {
    cur->measureTime += MEASURE_INTERVAL;
-   newline();
    cur->minuteRms = iSqrt(int(cur->rmsSum / cur->rmsSamples));
+#if defined(ARDUINO_ARCH_STM32)
+   printf("minute rms count %d samples %5d rms %4d %4d\n",
+	  cur->minuteCount, cur->rmsSamples, cur->minuteRms,
+	  (cur->minuteRms * 3300) / 4095);
+#else
+   newline();
    printf("minute rms count %d samples %5d sum %10lld rms %4d %4d\n",
 	  cur->minuteCount, cur->rmsSamples, cur->rmsSum, cur->minuteRms,
 	  (cur->minuteRms * 3300) / 4095);
+#endif	/* ARDUINO_ARCH_STM32 */
    cur->minuteCount = 0;
    cur->rmsSamples = 0;
    cur->rmsSum = 0;
@@ -836,8 +867,10 @@ void updateCurrent(P_RMSCUR cur)
   if ((t - cur->displayTime) >= DISPLAY_INTERVAL)
   {
    cur->displayTime += DISPLAY_INTERVAL;
-   newline();
    int offset = buf->offset >> SAMPLE_SHIFT;
+#if !defined(ARDUINO_ARCH_STM32)
+   newline();
+#endif	/* ARDUINO_ARCH_STM32 */
    printf("sample %3d min %4d %4d max %4d %4d offset %4d sum %9d rms %4d\n",
 	  samples, buf->min, offset - buf->min, buf->max, buf->max - offset,
 	  offset, buf->sum, (cur->rms * 3300) / 4095);
@@ -1208,9 +1241,7 @@ void adcRead1(void)
 
 void adcRun(void)
 {
- P_RMSPWR pwr = &rmsPower[0];
- pwr->state = initAvg;
- pwr->lastState = initAvg;
+ rmsCfgInit();		/* initialize configuration */
  adcTest = false;
  pwrActive = true;
  adcRead();
@@ -1248,7 +1279,6 @@ void adcRead(void)
  adcTmrSetIE();
  adcTmrCC1ClrIF();
  adcTmrCC1SetIE();
- adcTmrStart();
 
  LL_ADC_SetChannelSamplingTime(ADC1, ADC1_0, SAMPLING_TIME);
  LL_ADC_SetChannelSamplingTime(ADC1, ADC1_1, SAMPLING_TIME);
@@ -1301,6 +1331,8 @@ void adcRead(void)
  flushBuf();
  if (!pwrActive)
   adcCounter = SAMPLES;
+
+ adcTmrStart();			/* start timer */
 }
 
 void adcStatus(void)

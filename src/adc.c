@@ -21,11 +21,10 @@
 #include "adc.h"
 
 /* USER CODE BEGIN 0 */
+#include <stdio.h>
 
 #if defined(ARDUINO_ARCH_STM32)
 inline void Error_Handler() {}
-#define HAL_ADC_MspDeInit ADC_MspDeInit
-#define HAL_ADC_MspInit ADC_MspInit
 #endif
 
 /* USER CODE END 0 */
@@ -99,6 +98,7 @@ void HAL_ADC_MspInit(ADC_HandleTypeDef* adcHandle)
   if(adcHandle->Instance==ADC1)
   {
   /* USER CODE BEGIN ADC1_MspInit 0 */
+   printf("HAL_ADC_MspInit\n");
 
   /* USER CODE END ADC1_MspInit 0 */
     /* ADC1 clock enable */
@@ -152,6 +152,7 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
   if(adcHandle->Instance==ADC1)
   {
   /* USER CODE BEGIN ADC1_MspDeInit 0 */
+   printf("HAL_ADC_MspInit\n");
 
   /* USER CODE END ADC1_MspDeInit 0 */
     /* Peripheral clock disable */
