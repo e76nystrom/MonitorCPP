@@ -280,11 +280,11 @@ int16_t monitorLoop(void)
      P_CHANCFG chan = &chanCfg[i];
      if (chan->type == POWER_CHAN)
      {
-      updatePower(chan->pwr);
+      updatePower(chan);
      }
      else if (chan->type == CURRENT_CHAN)
      {
-      updateCurrent(chan->cur);
+      updateCurrent(chan);
      }
     }
    }

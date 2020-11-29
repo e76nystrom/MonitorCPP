@@ -74,6 +74,9 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define CHAN_PAIRS 2
 #define ADC_BITS 12
 
+#define ADC_MAX ((1 << ADC_BITS) - 1)
+#define VREF_1000 3300
+
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
 
@@ -102,7 +105,7 @@ typedef struct s_rms
  int sample;			/* current sample */
  int value;			/* value after offset operation */
  int offset;			/* filtered offset */
- int sum;			/* sum of squares */
+ uint64_t sum;			/* sum of squares */
  int min;
  int max;
 } T_RMS, *P_RMS;
@@ -165,7 +168,7 @@ typedef struct s_rmsPwr
 typedef struct s_curData
 {
  uint32_t time;			/* time of reading */
- int sum;			/* current sum of squares */
+ uint64_t sum;			/* current sum of squares */
  int samples;			/* samples */
  int offset;
  int min;
@@ -202,6 +205,8 @@ typedef struct s_chanCfg
  CHAN_TYPE type;		/* channel type */
  int curChan;			/* current channel */
  int vltChan;			/* voltage channel */
+ int curScale;			/* current scale */
+ int voltScale;			/* voltage scale */
  union
  {
   P_RMSPWR pwr;			/* rms power data */
@@ -239,8 +244,8 @@ void rmsCfgInit(void);
 void rmsUpdate(int sample, P_RMS rms);
 #else
 void currentUpdate();
-void updatePower(P_RMSPWR pwr);
-void updateCurrent(P_RMSCUR cur);
+void updatePower(P_CHANCFG chan);
+void updateCurrent(P_CHANCFG chan);
 #endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
@@ -538,6 +543,8 @@ void rmsCfgInit(void)
  memset((void *) pwr, 0, sizeof(rmsPower));
 
  cfg->type = POWER_CHAN;
+ cfg->curScale = 20.0;
+ cfg->voltScale = 1.0;
  pwr->cfg = cfg;
  pwr->state = initAvg;
  pwr->lastState = initAvg;
@@ -551,6 +558,7 @@ void rmsCfgInit(void)
  memset((void *) cur, 0, sizeof(rmsCurrent));
  
  cfg->type = CURRENT_CHAN;
+ cfg->curScale = 20.0;
  cur->cfg = cfg;
  cur->state = initCur;
  cur->lastState = initCur;
@@ -774,18 +782,43 @@ void currentUpdate()
    P_CHANCFG chan = &chanCfg[i];
    if (chan->type == POWER_CHAN)
    {
-    updatePower(chan->pwr);
+    updatePower(chan);
    }
    else if (chan->type == CURRENT_CHAN)
    {
-    updateCurrent(chan->cur);
+    updateCurrent(chan);
    }
   }
  }
 }
 
-void updatePower(P_RMSPWR pwr)
+char *i64toa(uint32_t val, char *buf)
 {
+ char tmp[32];
+ int count = 0;
+ char *p = tmp;
+ while (val != 0)
+ {
+  int dig = (int) (val % 10);
+  *p++ = (char) (dig + '0');
+  count += 1;
+  val /= 10;
+ }
+ char *p1 = buf;
+ if (count == 0)
+  *p1++ = '0';
+ else
+ {
+  while (--count >= 0)
+   *p1++ = *--p;
+ }
+ *p1++ = 0;
+ return(buf);
+}
+
+void updatePower(P_CHANCFG chan)
+{
+ P_RMSPWR pwr = chan->pwr;
  while (pwr->pwrBuf.count != 0)
  {
   dbg0Set();
@@ -820,8 +853,9 @@ void updatePower(P_RMSPWR pwr)
  }
 }
 
-void updateCurrent(P_RMSCUR cur)
+void updateCurrent(P_CHANCFG chan)
 {
+ P_RMSCUR cur = chan->cur;
  while (cur->curBuf.count != 0)
  {
   dbg0Set();
@@ -847,33 +881,42 @@ void updateCurrent(P_RMSCUR cur)
   uint32_t t = millis();
   if ((t - cur->measureTime) >= MEASURE_INTERVAL)
   {
+   char convBuf[32];
    cur->measureTime += MEASURE_INTERVAL;
    cur->minuteRms = iSqrt(int(cur->rmsSum / cur->rmsSamples));
-#if defined(ARDUINO_ARCH_STM32)
-   printf("minute rms count %d samples %5d rms %4d %4d\n",
-	  cur->minuteCount, cur->rmsSamples, cur->minuteRms,
-	  (cur->minuteRms * 3300) / 4095);
-#else
+   int maRms = ((cur->minuteRms * VREF_1000) / ADC_MAX) * chan->curScale;
+   int amps = maRms / 1000;
+   int mAmps = maRms - (amps * 1000);
+#if !defined(ARDUINO_ARCH_STM32)
    newline();
-   printf("minute rms count %d samples %5d sum %10lld rms %4d %4d\n",
-	  cur->minuteCount, cur->rmsSamples, cur->rmsSum, cur->minuteRms,
-	  (cur->minuteRms * 3300) / 4095);
 #endif	/* ARDUINO_ARCH_STM32 */
+   printf("minute rms count %d samples %5d sum %10s rms %4d %4d %2d.%03d\n",
+	  cur->minuteCount, cur->rmsSamples, i64toa(cur->rmsSum, convBuf),
+	  cur->minuteRms, maRms, amps, mAmps);
    cur->minuteCount = 0;
    cur->rmsSamples = 0;
    cur->rmsSum = 0;
+
+#if defined(ARDUINO_ARCH_STM32)
+   char buf[128];
+   char *p;
+   p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
+   sprintf(p, "%d.%03d", amps, mAmps);
+   emonData(buf);
+#endif	/* ARDUINO_ARCH_STM32 */
   }
   
   if ((t - cur->displayTime) >= DISPLAY_INTERVAL)
   {
+   char convBuf[32];
    cur->displayTime += DISPLAY_INTERVAL;
    int offset = buf->offset >> SAMPLE_SHIFT;
 #if !defined(ARDUINO_ARCH_STM32)
    newline();
 #endif	/* ARDUINO_ARCH_STM32 */
-   printf("sample %3d min %4d %4d max %4d %4d offset %4d sum %9d rms %4d\n",
+   printf("sample %3d min %4d %4d max %4d %4d offset %4d sum %10s rms %4d\n",
 	  samples, buf->min, offset - buf->min, buf->max, buf->max - offset,
-	  offset, buf->sum, (cur->rms * 3300) / 4095);
+	  offset, i64toa(buf->sum, convBuf), (cur->rms * VREF_1000) / ADC_MAX);
   }
  }
 }

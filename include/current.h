@@ -15,6 +15,9 @@
 #define CHAN_PAIRS 2
 #define ADC_BITS 12
 
+#define ADC_MAX ((1 << ADC_BITS) - 1)
+#define VREF_1000 3300
+
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
 
@@ -43,7 +46,7 @@ typedef struct s_rms
  int sample;			/* current sample */
  int value;			/* value after offset operation */
  int offset;			/* filtered offset */
- int sum;			/* sum of squares */
+ uint64_t sum;			/* sum of squares */
  int min;
  int max;
 } T_RMS, *P_RMS;
@@ -106,7 +109,7 @@ typedef struct s_rmsPwr
 typedef struct s_curData
 {
  uint32_t time;			/* time of reading */
- int sum;			/* current sum of squares */
+ uint64_t sum;			/* current sum of squares */
  int samples;			/* samples */
  int offset;
  int min;
@@ -143,6 +146,8 @@ typedef struct s_chanCfg
  CHAN_TYPE type;		/* channel type */
  int curChan;			/* current channel */
  int vltChan;			/* voltage channel */
+ int curScale;			/* current scale */
+ int voltScale;			/* voltage scale */
  union
  {
   P_RMSPWR pwr;			/* rms power data */
@@ -180,8 +185,8 @@ void rmsCfgInit(void);
 void rmsUpdate(int sample, P_RMS rms);
 #else
 void currentUpdate();
-void updatePower(P_RMSPWR pwr);
-void updateCurrent(P_RMSCUR cur);
+void updatePower(P_CHANCFG chan);
+void updateCurrent(P_CHANCFG chan);
 #endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
