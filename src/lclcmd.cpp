@@ -18,6 +18,14 @@
 #include "config.h"
 #include "serialio.h"
 #include "current.h"
+#include "cyclectr.h"
+
+#include "i2c.h"
+
+#include "i2cx.h"
+#include "lcd.h"
+#include "spix.h"
+#include "max31856.h"
 
 #ifdef EXT
 #undef EXT
@@ -59,12 +67,84 @@ T_PORT_LIST portList[] =
  {'e', GPIOE},
 };
 
+void delayMSec(volatile uint32_t mSec)
+{
+ uint32_t start = millis();
+ 
+ while ((millis() - start) < mSec)
+  ;
+}
+
 void lclcmd(int ch)
 {
  if (ch == 'i')			/* init character buffer */
  {
   initCharBuf();
  }
+#if 0
+ else if (ch == 'J')
+ {
+  newline();
+  startCnt();
+  unsigned int timeout = 500 * (HAL_RCC_GetHCLKFreq() / 1000000);
+  for (uint8_t address = 8; address < 120; address++)
+  {
+   if (i2c_start(I2C1, address))
+   {
+    printf("found %02x\n", (unsigned int) address);
+   }
+   i2c_stop(I2C1);
+   unsigned int start = getCycles();
+   while ((I2C1->SR2 & I2C_SR2_BUSY) != 0)
+   {
+    if ((getCycles() - start) > timeout)
+     break;
+   }
+   printf("sr1 %8x sr2 %8x\n",
+	  (unsigned int) I2C1->SR1, (unsigned int) I2C1->SR2);
+   flushBuf();
+  }
+ }
+#endif
+ else if (ch == 'L')
+ {
+  newline();
+  lcdInit();
+ }
+ else if (ch == 'W')
+ {
+  newline();
+  setBacklight(1);
+  setCursor(0, 0);
+  char buf[2];
+  buf[1] = 0;
+  for (int row = 0; row < 4; row++)
+  {
+   setCursorBuf(0, row);
+   buf[0] = '0' + row;
+   lcdString(buf);
+   lcdString(" Test");
+   i2cSend();
+   while (i2cCtl.state != I_IDLE)
+    i2cControl();
+  }
+ }
+ else if (ch == 'H')
+ {
+  newline();
+  MX_I2C1_Init();
+  i2cInfo(I2C1, "I2C1");
+  rccInfo();
+ }
+#if 0
+ else if (ch == 'I')
+ {
+  newline();
+  i2cInfo(I2C1, "I2C1");
+  rccInfo();
+  i2cWrite(0x55);
+ }
+ #endif 
  else if (ch == 'b')
  {
   printf("\ncharOverflow %d\n", charOverflow);
@@ -271,7 +351,10 @@ void lclcmd(int ch)
    gpioInfo(GPIOE);
 #endif
   if (val & 0x20000)
+  {
    i2cInfo(I2C1, "I2C1");
+   rccInfo();
+  }
   if (val & 0x40000)
    usartInfo(DBGPORT, "DBG");
 #if defined(REMPORT)
@@ -357,6 +440,84 @@ void lclcmd(int ch)
   }
  }
 #endif
+
+ else if (ch == 'T')		/* thermocouple commands */
+ {
+  while (1)
+  {
+   printf("\nthermocouple: ");
+   flushBuf();
+   while (dbgRxReady() == 0)	/* while no character */
+    ;
+   ch = dbgRxRead();
+   putBufChar(ch);
+   newline();
+   if (ch == 'i')
+   {
+    max56Init(MX56_TCTYPE_K, MX56_ONESHOT);
+   }
+   else if (ch == 't')
+   {
+    max56SetConversionType(MX56_ONESHOT);
+    delayMSec(200);
+    int32_t temp = max56ReadTemp();
+    char buf[10];
+    printf("temp %sc %5.2ff\n", max56FmtTemp(temp, buf, sizeof(buf)),
+	   (max56ConvTemp(temp) * 9) / 5 + 32);
+   }
+   else if (ch == 'c')
+   {
+    char buf[10];
+    int32_t temp = max56ReadCJ();
+    printf("cold junction %s %5.2ff\n", max56FmtCJ(temp, buf, sizeof(buf)),
+	   (max56ConvCJ(temp) * 9) / 5 + 32);
+   }
+   else if (ch == 'r')
+   {
+    printf(" 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15\n");
+    for (int i = 0; i < 16; i++)
+     printf("%02x ", (readb(i) & 0xff));
+    printf("\n");
+   }
+   else if (ch == 'd')
+   {
+    lcdInit();
+    unsigned int t = millis();
+    while (1)
+    {
+     if (dbgRxReady() != 0)
+     {
+      ch = dbgRxRead();
+      if (ch == 3)
+       break;
+     }
+     unsigned int t1 = millis();
+     if ((t1 - t) > 1000)
+     {
+      t = t1;
+      max56SetConversionType(MX56_ONESHOT);
+      delayMSec(200);
+      int32_t temp = max56ReadTemp();
+      setCursorBuf(0, 0);
+      float c = max56ConvTemp(temp);
+      char buf[22];
+      snprintf(buf, sizeof(buf), "%5.2fc %6.2ff", c, (c * 9.0) / 5.0 + 32.0);
+      //max56FmtTemp(temp, buf, sizeof(buf));
+      lcdString(buf);
+      i2cSend();
+     }
+     while (i2cCtl.state != I_IDLE)
+      i2cControl();
+     while (pollBufChar() != 0)
+      ;
+    }
+   }
+   else if (ch == 'x')
+   {
+    break;
+   }
+  }
+ }
 
 #if DBGTRK
  else if (ch == 'T')		/* print track buffer */

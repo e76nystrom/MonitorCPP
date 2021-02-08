@@ -41,6 +41,7 @@
 #endif	/* ARDUINO_ARCH_STM32 */
 
 #include "current.h"
+#include "cyclectr.h"
 
 #define DMA 0
 #define SIMULTANEOUS 0
@@ -53,7 +54,6 @@ extern ADC_HandleTypeDef hadc2;
 #if DMA
 extern DMA_HandleTypeDef hdma_adc1;
 #endif	/* DMA */
-
 #include "dbg.h"
 #endif	/* STM32MON */
 
@@ -277,6 +277,7 @@ void tmrInfo(TIM_TypeDef *tmr);
 void extiInfo(void);
 void usartInfo(USART_TypeDef *usart, const char *str);
 void i2cInfo(I2C_TypeDef *i2c, const char *str);
+void rccInfo(void);
 void adcInfo(ADC_TypeDef *adc, char n);
 void dmaInfo(DMA_TypeDef *dma);
 void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
@@ -292,44 +293,6 @@ inline uint32_t interval(uint32_t start, uint32_t end)
  else
   return(start - end);
 }
-
-#define CYCLE_CTR
-#if defined(CYCLE_CTR)
-#define cycleCtr 0
-#define DWT_CTRL_CycCntEna DWT_CTRL_CYCCNTENA_Msk
-inline void resetCnt()
-{
- DWT->CTRL &= ~DWT_CTRL_CycCntEna; // disable the counter    
- DWT->CYCCNT = 0;		// reset the counter
-}
-
-inline void startCnt()
-{
- DWT->CTRL |= DWT_CTRL_CycCntEna; // enable the counter
-}
-
-inline void stopCnt()
-{
- DWT->CTRL &= ~DWT_CTRL_CycCntEna; // disable the counter    
-}
-
-inline unsigned int getCycles()
-{
- return DWT->CYCCNT;
-}
-
-inline void getCycles(uint32_t *val)
-{
- *val = DWT->CYCCNT;
-}
-#else  /* CYCLE_CTR */
-#define cycleCtr 0
-inline void resetCnt() {}
-inline void startCnt() {}
-inline void stopCnt() {}
-inline unsigned int getCycles() {return(0);}
-inline void getCycles(uint32_t *val) {};
-#endif	/* CYCLE_CTR */
 
 typedef union
 {
@@ -420,6 +383,18 @@ unsigned int millis(void);
 #endif /* __CURRENT_INC__ */	// ->
 #ifdef __CURRENT__
 
+unsigned int dmaInts;
+unsigned int adc1Ints;
+unsigned int adc2Ints;
+unsigned int timUpInts;
+unsigned int timCCInts;
+
+unsigned int adc1DR;
+unsigned int adc2DR;
+
+bool extTrig;
+bool updChannel;
+
 #if defined(ARDUINO_ARCH_STM32)
 //#define putDbg(ch) DBGPORT.write(ch);
 #define putDbg(ch)
@@ -434,18 +409,6 @@ unsigned int millis(void);
 #define SAMPLING_TIME LL_ADC_SAMPLINGTIME_61CYCLES_5
 #endif	/* STM32F3 */
 
-unsigned int dmaInts;
-unsigned int adc1Ints;
-unsigned int adc2Ints;
-unsigned int timUpInts;
-unsigned int timCCInts;
-
-unsigned int adc1DR;
-unsigned int adc2DR;
-
-bool extTrig;
-bool updChannel;
-
 #if defined(ARDUINO_ARCH_STM32)
 
 #define newline newLine
@@ -454,7 +417,7 @@ bool updChannel;
 #endif	/* ARDUINO_ARCH_STM32 */
 
 #if !defined(ARDUINO_ARCH_STM32)
-extern uint32_t uwTick;
+extern volatile uint32_t uwTick;
 
 unsigned int millis(void)
 {
@@ -898,11 +861,13 @@ void updateCurrent(P_CHANCFG chan)
    cur->rmsSum = 0;
 
 #if defined(ARDUINO_ARCH_STM32)
+#if defined(WIFI_ENA)
    char buf[128];
    char *p;
    p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
    sprintf(p, "%d.%03d", amps, mAmps);
    emonData(buf);
+#endif	/* WIFI_ENA */
 #endif	/* ARDUINO_ARCH_STM32 */
   }
   
@@ -1518,7 +1483,7 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
      if (pwr->lastBelow)
      {
 #if defined(Dbg5_Pin)
-      if ((Dbg5_GPIO_Port->ODR & (1 << Dbg5_Pin)) != 0)
+      if ((Dbg5_GPIO_Port->ODR & Dbg5_Pin) != 0)
        dbg5Clr();
       else
        dbg5Set();
@@ -1600,7 +1565,7 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
     if (samples >= (CYCLES_SEC * SAMPLES_CYCLE))
     {
 #if defined(Dbg4_Pin)
-     if ((Dbg4_GPIO_Port->ODR & (1 << Dbg4_Pin)) != 0)
+     if ((Dbg4_GPIO_Port->ODR &  Dbg4_Pin) != 0)
       dbg4Clr();
      else
       dbg4Set();
@@ -2156,10 +2121,10 @@ void usartInfo(USART_TypeDef *usart, const char *str)
  flushBuf();
 }
 
+#if !defined(ARDUINO_ARCH_STM32)
 void i2cInfo(I2C_TypeDef *i2c, const char *str)
 {
  printf("i2c %x %s\n", (unsigned int) i2c, str);
- #if 0
  printf("CR1   %8x ", (unsigned int) i2c->CR1);
  printf("CR2   %8x\n", (unsigned int) i2c->CR2);
  printf("OAR1  %8x ", (unsigned int) i2c->OAR1);
@@ -2169,9 +2134,24 @@ void i2cInfo(I2C_TypeDef *i2c, const char *str)
  printf("DR    %8x ", (unsigned int) i2c->DR);
  printf("CCR   %8x\n", (unsigned int) i2c->CCR);
  printf("TRISE %8x\n", (unsigned int) i2c->TRISE);
- #endif
  flushBuf();
 }
+
+void rccInfo()
+{
+ printf("rcc\n");
+ printf("CR       %8x ",  (unsigned int) RCC->CR);
+ printf("CFGR     %8x\n", (unsigned int) RCC->CFGR);
+ printf("APB2RSTR %8x ",  (unsigned int) RCC->APB2RSTR);
+ printf("APB1RSTR %8x\n", (unsigned int) RCC->APB1RSTR);
+ printf("APB2ENR  %8x ",  (unsigned int) RCC->APB2ENR);
+ printf("APB1ENR  %8x\n", (unsigned int) RCC->APB1ENR);
+ printf("CIR      %8x ",  (unsigned int) RCC->CIR);
+ printf("AHBENR   %8x\n", (unsigned int) RCC->AHBENR);
+ printf("BDCR     %8x ",  (unsigned int) RCC->BDCR);
+ printf("CSR      %8x\n", (unsigned int) RCC->CSR);
+}
+#endif
 
 void adcInfo(ADC_TypeDef *adc, char n)
 {

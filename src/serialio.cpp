@@ -1134,7 +1134,7 @@ void initCharBuf(void)
  isrOverflow = 0;
 }
 
-void delayUSec(unsigned short delay);
+//void delayUSec(unsigned short delay);
 
 void putBufStr(const char *s)
 {

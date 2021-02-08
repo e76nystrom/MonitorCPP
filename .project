@@ -24,4 +24,11 @@
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 		<nature>org.eclipse.cdt.core.ccnature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>monitor</name>
+			<type>2</type>
+			<location>C:/Development/Arduino/monitor/src</location>
+		</link>
+	</linkedResources>
 </projectDescription>

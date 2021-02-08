@@ -218,6 +218,7 @@ void tmrInfo(TIM_TypeDef *tmr);
 void extiInfo(void);
 void usartInfo(USART_TypeDef *usart, const char *str);
 void i2cInfo(I2C_TypeDef *i2c, const char *str);
+void rccInfo(void);
 void adcInfo(ADC_TypeDef *adc, char n);
 void dmaInfo(DMA_TypeDef *dma);
 void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
@@ -233,44 +234,6 @@ inline uint32_t interval(uint32_t start, uint32_t end)
  else
   return(start - end);
 }
-
-#define CYCLE_CTR
-#if defined(CYCLE_CTR)
-#define cycleCtr 0
-#define DWT_CTRL_CycCntEna DWT_CTRL_CYCCNTENA_Msk
-inline void resetCnt()
-{
- DWT->CTRL &= ~DWT_CTRL_CycCntEna; // disable the counter    
- DWT->CYCCNT = 0;		// reset the counter
-}
-
-inline void startCnt()
-{
- DWT->CTRL |= DWT_CTRL_CycCntEna; // enable the counter
-}
-
-inline void stopCnt()
-{
- DWT->CTRL &= ~DWT_CTRL_CycCntEna; // disable the counter    
-}
-
-inline unsigned int getCycles()
-{
- return DWT->CYCCNT;
-}
-
-inline void getCycles(uint32_t *val)
-{
- *val = DWT->CYCCNT;
-}
-#else  /* CYCLE_CTR */
-#define cycleCtr 0
-inline void resetCnt() {}
-inline void startCnt() {}
-inline void stopCnt() {}
-inline unsigned int getCycles() {return(0);}
-inline void getCycles(uint32_t *val) {};
-#endif	/* CYCLE_CTR */
 
 typedef union
 {

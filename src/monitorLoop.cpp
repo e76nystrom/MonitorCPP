@@ -24,6 +24,8 @@
 
 #define EXT extern
 #include "current.h"
+#include "i2cx.h"
+#include "cyclectr.h"
 
 void monitorLoopSetup(void);
 extern "C" int16_t monitorLoop(void);
@@ -153,11 +155,14 @@ int16_t monitorLoop(void)
 	getSP());
  #endif
 
+#if defined(CYCLE_CTR)
  printf("DWT_CTRL %x\n", (unsigned int) DWT->CTRL);
  resetCnt();
  startCnt();
  stopCnt();
  printf("cycles %u\n", getCycles());
+ startCnt();
+ #endif
 
  clockFreq = HAL_RCC_GetHCLKFreq();
  tmrFreq = HAL_RCC_GetPCLK2Freq();
@@ -248,6 +253,9 @@ int16_t monitorLoop(void)
 
  ledUpdTime = millis();
  ledSet();
+
+ SPI_SEL_GPIO_Port->BSRR = SPI_SEL_Pin; /* disable spi select */
+
  while (1)			/* main loop */
  {
   newline();
@@ -296,6 +304,8 @@ int16_t monitorLoop(void)
     putBufChar(ch);		/* echo input */
     break;
    }
+
+   i2cControl();
   }
 
   flushBuf();
