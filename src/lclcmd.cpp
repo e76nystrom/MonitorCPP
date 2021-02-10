@@ -43,6 +43,10 @@
 
 void lclcmd(int ch);
 
+void afioInfo(void);
+void bkpInfo(void);
+void rtcInfo(void);
+
 #endif	// ->
 #ifdef __LCLCMD__
 
@@ -110,6 +114,12 @@ void lclcmd(int ch)
  {
   newline();
   lcdInit();
+ }
+ else if (ch == 'R')
+ {
+  printf("\nbkp reset\n");
+  RCC->BDCR |= RCC_BDCR_BDRST;
+  RCC->BDCR &= ~RCC_BDCR_BDRST;
  }
  else if (ch == 'W')
  {
@@ -274,6 +284,19 @@ void lclcmd(int ch)
     port->ODR = val;
     printf("\n");
     gpioInfo(port);
+    while (1)
+    {
+     printf("done: ");
+     flushBuf();
+     while (dbgRxReady() == 0)	/* while no character */
+      ;
+     ch = dbgRxRead();
+     putBufChar(ch);
+     newline();
+     flushBuf();
+     if (ch == 'y')
+      break;
+    }
    }
   }
  }
@@ -360,6 +383,18 @@ void lclcmd(int ch)
 #if defined(REMPORT)
   if (val & 0x80000)
    usartInfo(REMPORT, "REM");
+#endif
+#if defined(STM32F1)
+  if (val & 0x100000)
+  {
+   afioInfo();
+   newline();
+   bkpInfo();
+   newline();
+   rtcInfo();
+   newline();
+   rccInfo();
+  }
 #endif
  }
 #endif
@@ -596,4 +631,45 @@ void lclcmd(int ch)
   tmrInfo(TIM3);
   tmrInfo(TIM4);
  }
+}
+
+void afioInfo(void)
+{
+#if defined(STM32F1)
+ printf("AFIO %x\n", (unsigned int) AFIO);
+ printf("EVCR      %8x ",  (unsigned int) AFIO->EVCR);
+ printf("MAPR      %8x\n", (unsigned int) AFIO->MAPR);
+ printf("EXTICR[0] %8x ",  (unsigned int) AFIO->EXTICR[0]);
+ printf("EXTICR[1] %8x\n", (unsigned int) AFIO->EXTICR[1]);
+ printf("EXTICR[2] %8x ",  (unsigned int) AFIO->EXTICR[2]);
+ printf("EXTICR[3] %8x\n", (unsigned int) AFIO->EXTICR[3]);
+ printf("MAPR2     %8x\n", (unsigned int) AFIO->MAPR2);
+#endif
+}
+
+void bkpInfo(void)
+{
+#if defined(STM32F1)
+ printf("BKP %x\n", (unsigned int) BKP);
+ printf("RTCCR     %8x ",  (unsigned int) BKP->RTCCR);
+ printf("CR        %8x\n", (unsigned int) BKP->CR);
+ printf("CSR       %8x\n", (unsigned int) BKP->CSR);
+#endif
+}
+
+void rtcInfo(void)
+{
+#if defined(STM32F1)
+ printf("RTC %x\n", (unsigned int) RTC);
+ printf("CRH       %8x ",  (unsigned int) RTC->CRH);
+ printf("CRL       %8x\n", (unsigned int) RTC->CRL);
+ printf("PRLH      %8x ",  (unsigned int) RTC->PRLH);
+ printf("PRLL      %8x\n", (unsigned int) RTC->PRLL);
+ printf("DIVH      %8x ",  (unsigned int) RTC->DIVH);
+ printf("DIVL      %8x\n", (unsigned int) RTC->DIVL);
+ printf("CNTH      %8x ",  (unsigned int) RTC->CNTH);
+ printf("CNTL      %8x\n", (unsigned int) RTC->CNTL);
+ printf("ALRH      %8x ",  (unsigned int) RTC->ALRH);
+ printf("ALRL      %8x\n", (unsigned int) RTC->ALRL);
+#endif
 }

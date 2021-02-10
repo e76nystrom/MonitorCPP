@@ -16,6 +16,7 @@
 #include <math.h>
 #include <limits.h>
 
+#include "main.h"
 #include "config.h"
 #include "adc.h"
 #include "serialio.h"
@@ -119,6 +120,12 @@ int16_t monitorLoop(void)
  };
 
  putstr("polled output starting\n");
+
+ RCC->BDCR |= RCC_BDCR_BDRST;	/* reset backup registers */
+ RCC->BDCR &= ~RCC_BDCR_BDRST;
+
+ RCC->BDCR = (RCC_BDCR_RTCEN | RCC_BDCR_RTCSEL |
+	      RCC_BDCR_LSERDY |RCC_BDCR_LSEON); /* enable real time clock */
 
 #if 0
  DBGMCU->APB1FZ = DBGMCU_APB1_FZ_DBG_IWDG_STOP; /* stop wd on debug */

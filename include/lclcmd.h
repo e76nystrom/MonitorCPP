@@ -6,4 +6,8 @@
 
 void lclcmd(int ch);
 
+void afioInfo(void);
+void bkpInfo(void);
+void rtcInfo(void);
+
 #endif	// ->

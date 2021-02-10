@@ -2124,7 +2124,7 @@ void usartInfo(USART_TypeDef *usart, const char *str)
 #if !defined(ARDUINO_ARCH_STM32)
 void i2cInfo(I2C_TypeDef *i2c, const char *str)
 {
- printf("i2c %x %s\n", (unsigned int) i2c, str);
+ printf("I2C %08x %s\n", (unsigned int) i2c, str);
  printf("CR1   %8x ", (unsigned int) i2c->CR1);
  printf("CR2   %8x\n", (unsigned int) i2c->CR2);
  printf("OAR1  %8x ", (unsigned int) i2c->OAR1);
@@ -2139,7 +2139,7 @@ void i2cInfo(I2C_TypeDef *i2c, const char *str)
 
 void rccInfo()
 {
- printf("rcc\n");
+ printf("RCC %08x\n", (unsigned int) RCC);
  printf("CR       %8x ",  (unsigned int) RCC->CR);
  printf("CFGR     %8x\n", (unsigned int) RCC->CFGR);
  printf("APB2RSTR %8x ",  (unsigned int) RCC->APB2RSTR);
