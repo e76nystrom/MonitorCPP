@@ -195,6 +195,7 @@ void adcRead1(void);
 void adcStatus(void);
 void adcTmrTest(void);
 
+#if 0
 typedef struct
 {
  union
@@ -225,6 +226,7 @@ void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
 
 char portName(GPIO_TypeDef *port);
 char timNum(TIM_TypeDef *tmr);
+#endif
 
 inline uint32_t cpuCycles(void) { return(SysTick->VAL); }
 inline uint32_t interval(uint32_t start, uint32_t end)

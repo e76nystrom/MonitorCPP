@@ -26,6 +26,7 @@
 #include "lcd.h"
 #include "spix.h"
 #include "max31856.h"
+#include "stm32Info.h"
 
 #ifdef EXT
 #undef EXT
@@ -43,14 +44,16 @@
 
 void lclcmd(int ch);
 
+#if 0
 void afioInfo(void);
 void bkpInfo(void);
 void rtcInfo(void);
+#endif
 
 #endif	// ->
 #ifdef __LCLCMD__
 
-int lastFlags;
+//int lastFlags;
 
 #if PIN_DISPLAY
 void pinDisplay();
@@ -301,7 +304,7 @@ void lclcmd(int ch)
   }
  }
 
-#if 1
+#if 0
  else if (ch == 'Q')		/* print peripheral info */
  {
   if (query(&getnum, " flag [0x%x]: ", lastFlags) == 0)
@@ -397,10 +400,13 @@ void lclcmd(int ch)
   }
 #endif
  }
+#else
+ else if (ch == 'Q')
+  info();
 #endif
  
 #if 0 // DBGMSG
- if (ch == 'D')			/* dump dbg buffer */
+ else if (ch == 'D')		/* dump dbg buffer */
  {
   newline();
   int empty = dbgemp;
@@ -633,6 +639,7 @@ void lclcmd(int ch)
  }
 }
 
+#if 0
 void afioInfo(void)
 {
 #if defined(STM32F1)
@@ -673,3 +680,4 @@ void rtcInfo(void)
  printf("ALRL      %8x\n", (unsigned int) RTC->ALRL);
 #endif
 }
+#endif

@@ -31,6 +31,8 @@
 #include "tim.h"
 #endif	/* ARDUINO_ARCH_STM32 */
 
+#include "stm32Info.h"
+
 #ifdef EXT
 #undef EXT
 #endif	/* EXT */
@@ -254,6 +256,7 @@ void adcRead1(void);
 void adcStatus(void);
 void adcTmrTest(void);
 
+#if 0
 typedef struct
 {
  union
@@ -284,6 +287,7 @@ void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
 
 char portName(GPIO_TypeDef *port);
 char timNum(TIM_TypeDef *tmr);
+#endif
 
 inline uint32_t cpuCycles(void) { return(SysTick->VAL); }
 inline uint32_t interval(uint32_t start, uint32_t end)
@@ -1762,6 +1766,7 @@ extern "C" void ADC1_2_IRQHandler(void)
  } /* adc2 interrupt active */
 }
 
+#if 0
 typedef struct
 {
  GPIO_TypeDef *port;
@@ -2419,5 +2424,6 @@ void info()
 #endif
 }
 #endif	/* ARDUINO_ARCH_STM32 */
+#endif	/* 0 */
 
 #endif	/* __CURRENT__ */
