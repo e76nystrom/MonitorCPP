@@ -45,7 +45,8 @@ cscope*
 
 Tmp/*
 
-
 *.bak
-
 *.xlsx
+*.txt
+*.lst
+
