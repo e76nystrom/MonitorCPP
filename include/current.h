@@ -195,39 +195,6 @@ void adcRead1(void);
 void adcStatus(void);
 void adcTmrTest(void);
 
-#if 0
-typedef struct
-{
- union
- {
-  struct
-  {
-   char port;
-   char num;
-  };
-  struct
-  {
-   uint16_t pinName;
-  };
- };
-} T_PIN_NAME;
-
-T_PIN_NAME pinName(char *buf, GPIO_TypeDef *port, int pin);
-char *gpioStr(char *buf, int size, T_PIN_NAME *pinInfo);
-void gpioInfo(GPIO_TypeDef *gpio);
-void tmrInfo(TIM_TypeDef *tmr);
-void extiInfo(void);
-void usartInfo(USART_TypeDef *usart, const char *str);
-void i2cInfo(I2C_TypeDef *i2c, const char *str);
-void rccInfo(void);
-void adcInfo(ADC_TypeDef *adc, char n);
-void dmaInfo(DMA_TypeDef *dma);
-void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
-
-char portName(GPIO_TypeDef *port);
-char timNum(TIM_TypeDef *tmr);
-#endif
-
 inline uint32_t cpuCycles(void) { return(SysTick->VAL); }
 inline uint32_t interval(uint32_t start, uint32_t end)
 {
