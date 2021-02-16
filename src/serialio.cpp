@@ -163,6 +163,7 @@ inline void dbgTxIntDis()
  DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
 }
 
+#if defined(REMPORT)
 inline uint32_t remRxReady()
 {
  return(REMPORT->SR & USART_SR_RXNE);
@@ -195,7 +196,8 @@ inline void remTxIntDis()
 {
  REMPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
 }
-#endif
+#endif	/* REMPORT */
+#endif	/* STM32F1 */
 
 #if defined(STM32F3)
 inline uint32_t dbgRxReady()
@@ -232,16 +234,6 @@ inline void dbgTxIntDis()
 
 #define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
 #define SNDHEX(val) sndhex((unsigned char *) &val, sizeof(val))
-
-#if 0
-#define chRdy() (DBGPORT->SR & USART_SR_RXNE)
-#define chRead() DBGPORT->DR
-
-/* remote port macros */
-
-#define chRdy1() (REMPORT->SR & USART_SR_RXNE)
-#define chRead1() REMPORT->DR
-#endif
 
 #if DBGMSG
 
@@ -666,6 +658,8 @@ void prtibuf(int16_t *p, int size)
    printf(" ");
  }
 }
+
+#if defined(REMPORT)
 
 /* polled remote port routines */
 
@@ -1116,7 +1110,8 @@ unsigned char getnumRem(void)
  return(NO_VAL);
 }
 
-#endif
+#endif	/* 0 */
+#endif	/* REMP:ORT */
 
 void initCharBuf(void)
 {

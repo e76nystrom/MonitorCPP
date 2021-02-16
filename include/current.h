@@ -187,20 +187,6 @@ EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
 
-#if 0
-
-#define MAX_CHAN_POWER 1
-#define MAX_CHAN_RMS 2
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#else
-
-#define MAX_CHAN_POWER 0
-#define MAX_CHAN_RMS 1
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#endif	/* 0 */
-
 #if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
 #endif	/* __CURRENT__ */
@@ -213,14 +199,10 @@ void rmsTest(void);
 
 //void rmsCfgInit(void);
 void rmsCfgInit(P_CHANCFG cfg, int count);
-//#define POLL_UPDATE_POWER
-#if defined(POLL_UPDATE_POWER)
-void rmsUpdate(int sample, P_RMS rms);
-#else
+
 void currentUpdate();
 void updatePower(P_CHANCFG chan);
 void updateRms(P_CHANCFG chan);
-#endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
 void adcRun(void);

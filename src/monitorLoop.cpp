@@ -255,7 +255,7 @@ int16_t monitorLoop(void)
 
  #endif	 /* HAL */
 
- rmsCfgInit(&chanCfg[0], sizeof(chanCfg) / sizeof(T_CHANCFG)); /* init cfg */
+ rmsCfgInit(&chanCfg[0], MAX_CHAN); /* init cfg */
  pwrUpdTime = millis() - PWR_INTERVAL;
 
  ledUpdTime = millis();

@@ -46,20 +46,6 @@
 #include "current.h"
 #include "cyclectr.h"
 
-#if 1
-
-#define MAX_CHAN_POWER 1
-#define MAX_CHAN_RMS 2
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#else
-
-#define MAX_CHAN_POWER 0
-#define MAX_CHAN_RMS 1
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#endif	/* 0 */
-
 #if MAX_CHAN_POWER > 0
 T_RMSPWR rmsPower[MAX_CHAN_POWER];
 #endif	/* MAX_CHAN_POWER */
@@ -285,20 +271,6 @@ EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
 
-#if 0
-
-#define MAX_CHAN_POWER 1
-#define MAX_CHAN_RMS 2
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#else
-
-#define MAX_CHAN_POWER 0
-#define MAX_CHAN_RMS 1
-#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
-
-#endif	/* 0 */
-
 #if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
 #endif	/* __CURRENT__ */
@@ -311,14 +283,10 @@ void rmsTest(void);
 
 //void rmsCfgInit(void);
 void rmsCfgInit(P_CHANCFG cfg, int count);
-//#define POLL_UPDATE_POWER
-#if defined(POLL_UPDATE_POWER)
-void rmsUpdate(int sample, P_RMS rms);
-#else
+
 void currentUpdate();
 void updatePower(P_CHANCFG chan);
 void updateRms(P_CHANCFG chan);
-#endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
 void adcRun(void);
@@ -527,36 +495,6 @@ void rmsTest(void)
  pwrActive = true;
  adcRead();
 #endif
-
-#if defined(POLL_UPDATE_POWER)
- T_ADC_DATA adcData;
- while (!pwr->done)
- {
-  angle = fmod((double) rmsCount * angleInc, (double) (2 * M_PI));
-  adcData.voltage = rint(adcScale * sin(angle) + adcOffset);
-  adcData.current = rint(adcScale * sin(angle + pfAngle) + adcOffset);
-  if (pwr->b.count < PWR_SIZE)
-  {
-   int ptr = pwr->b.filPtr;
-   pwr->b.buf[ptr] = adcData;
-   ptr += 1;
-   if (ptr >= PWR_SIZE)
-    ptr = 0;
-   pwr->b.filPtr = ptr;
-   pwr->b.count += 1;
-   updatePower(pwr);
-   rmsCount += 1;
-  }
- }
- adcTest = false;
- pwrActive = false;
- printf("adcOffset %d adcScale %d rms %d\n",
-	adcOffset, adcScale, (int) (adcScale / sqrt(2)));
- printf("offset %d vRms %d v %5.3f\n",
-	pwr->v.offset, pwr->vRms, (float) scaleAdc(pwr->vRms) / 1000);
- printf("offset %d cRms %d c %5.3f\n",
-	pwr->c.offset, pwr->cRms, (float) scaleAdc(pwr->cRms) / 1000);
-#endif	/* POLL_UPDATE_POWER */
 }
 
 #if 0
@@ -653,21 +591,6 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
  }
 }
 
-#if defined(POLL_UPDATE_POWER)
-void rmsUpdate(int sample, P_RMS rms)
-{
- sample <<= SAMPLE_SHIFT;
- rms->sample = sample;
- int offset = rms->offset;
- offset = offset + ((sample - offset) >> 10);
- rms->offset = offset;
- sample -= offset;
- sample >>= SAMPLE_SHIFT;
- rms->value = sample;
- rms->sum += sample * sample;
-}
-#endif	/* POLL_UPDATE_POWER */
-
 uint32_t iSqrt(uint32_t a_nInput)
 {
  uint32_t op  = a_nInput;
@@ -693,172 +616,6 @@ uint32_t iSqrt(uint32_t a_nInput)
  }
  return(res);
 }
-
-#if defined(POLL_UPDATE_POWER)
-uint32_t start1;
-uint32_t end1;
-uint32_t start2;
-uint32_t end2;
-uint32_t start3;
-uint32_t end3;
-
-void updatePower(P_RMSPWR pwr)
-{
- if (pwr->b.count != 0)
- {
-  int ptr = pwr->b.empPtr;
-  T_ADC_DATA adcData = pwr->b.buf[ptr];
-  pwr->b.count -= 1;
-  ptr++;
-  if (ptr >= PWR_SIZE)
-   ptr = 0;
-  pwr->b.empPtr = ptr;
-
-  dbg0Set();
-  rmsUpdate(adcData.voltage, &pwr->v);
-  rmsUpdate(adcData.current, &pwr->c);
-  pwr->pwrSum += pwr->v.value * pwr->c.value;
-  pwr->samples += 1;
-  dbg0Clr();
-
-  switch (pwr->state)
-  {
-  case initAvg:			/* sample to get zero offset */
-   if (pwr->samples >= INITIAL_COUNT)
-   {
-    pwr->state = waitZero;
-    pwr->lastBelow = false;
-   }
-   break;
-
-  case waitZero:		/* wait for cycle start */
-   if (pwr->update)		/* if update enabled */
-   {
-    if (pwr->v.sample >= pwr->v.offset)
-    {
-     if (pwr->lastBelow)
-     {
-      pwr->v.sum = 0;
-      pwr->c.sum = 0;
-      pwr->pwrSum = 0;
-      pwr->samples = 0;
-      pwr->state = avgData;
-      pwr->update = false;
-      pwr->cycleCount = CYCLE_COUNT;
-     }
-     pwr->lastBelow = false;
-    }
-    else
-     pwr->lastBelow = true;
-   }
-   break;
-
-  case avgData:			/* sample for cycles */
-   if (pwr->v.sample >= pwr->v.offset)
-   {
-    if (pwr->lastBelow)
-    {
-     pwr->cycleCount -= 1;
-     if (pwr->cycleCount <= 0)
-     {
-      dbg1Set();
-      // uint32_t start = cpuCycles();
-      resetCnt();
-      startCnt();
-      int samples = pwr->samples;
-      pwr->sampleCount = samples;
-#define USE_ISQRT
-#if defined(USE_ISQRT)
-      pwr->vRms = iSqrt(pwr->v.sum / samples);
-      pwr->cRms = iSqrt(pwr->c.sum / samples);
-#else  /* USE_ISQRT */
-#define TIME_ISQRT
-#if TIME_ISQRT
-      uint32_t start = cpuCycles();
-      uint32_t overhead = cpuCycles();
-      overhead = interval(start, overhead);
-
-      start = cpuCycles();
-      pwr->vRms = iSqrt(pwr->v.sum / samples);
-      pwr->cRms = iSqrt(pwr->c.sum / samples);
-      uint32_t total = cpuCycles();
-      total = interval(start, total);
-
-      start = cpuCycles();
-      pwr->vRms = (int) sqrt((double) pwr->v.sum / samples);
-      pwr->cRms = (int) sqrt((double) pwr->c.sum / samples);
-      uint32_t total1 = cpuCycles();
-      total1 = interval(start, total1);
-#else  /* TIME_ISQRT */
-      start1 = cpuCycles();
-      end1 = cpuCycles();
-      uint32_t overhead = interval(start1, end1);
-
-      start2 = cpuCycles();
-      pwr->vRms = iSqrt(pwr->v.sum / samples);
-      pwr->cRms = iSqrt(pwr->c.sum / samples);
-      end2 = cpuCycles();
-      uint32_t total = interval(start2, end2);
-
-      start3 = cpuCycles();
-      pwr->vRms = (int) sqrt((double) pwr->v.sum / samples);
-      pwr->cRms = (int) sqrt((double) pwr->c.sum / samples);
-      end3 = cpuCycles();
-      uint32_t total1  = interval(start3, end3);
-#endif	/* TIME_ISQRT */
-      printf("overhead %u iSqrt %u sqrt %u\n",
-	     (unsigned int) overhead, (unsigned int) total,
-	     (unsigned int) total1);
-#endif	/* USE_ISQRT */
-      pwr->realPwr = pwr->pwrSum / samples;
-      pwr->aprntPwr = pwr->vRms * pwr->cRms;
-      pwr->pwrFactor = (100 * pwr->realPwr) / pwr->aprntPwr;
-      // uint32_t total = cpuCycles();
-      // total = interval(start, total);
-      stopCnt();
-      uint32_t total= getCycles();
-      dbg1Clr();
-      printf("cycles %u usec %u\n",
-	     (unsigned int) total, (unsigned int) total / 72);
-      printf("sample %d vSum %d vRms %d cSum %d cRms %d\n"
-	     "pwrSum %d, realPwr %d aprntPwr %d pwrFactor %d\n",
-	     samples, pwr->v.sum, pwr->vRms, pwr->c.sum, pwr->cRms,
-	     pwr->pwrSum, pwr->realPwr, pwr->aprntPwr, pwr->pwrFactor);
-      pwr->v.sum = 0;
-      pwr->c.sum = 0;
-      pwr->pwrSum = 0;
-      pwr->samples = 0;
-      pwr->done = true;
-      pwr->state = cycleDone;
-     }
-    }
-    pwr->lastBelow = false;
-   }
-   else
-    pwr->lastBelow = true;
-   break;
-
-  case cycleDone:
-   if (!pwr->done)
-   {
-    pwr->lastBelow = false;
-    pwr->state = waitZero;
-   }
-   break;
-
-  default:
-   pwr->state = initAvg;
-  }
-  if (pwr->state != pwr->lastState)
-  {
-   printf("state %d lastState %d count %d\n",
-	  pwr->state, pwr->lastState, pwr->samples);
-   pwr->lastState = pwr->state;
-  }
- }
-}
-
-#else /* PoLL_UPDATE_POWER */
 
 void currentUpdate()
 {
@@ -1023,8 +780,6 @@ void updateRms(P_CHANCFG chan)
   }
  }
 }
-
-#endif	/* POLL_UPDATE_POWER */
 
 void printBufC(bool scale)
 {
