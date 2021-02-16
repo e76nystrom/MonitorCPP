@@ -1,11 +1,19 @@
 #if 1	// <-
 
+#if defined(STM32F1)
+#include "stm32f1xx_ll_adc.h"
+#endif	/* STM32F1 */
+
+#if defined(STM32F4)
+#include "stm32f4xx_ll_adc.h"
+#endif
+
 #if !defined(EXT)
 #define EXT extern
 #endif	/* EXT */
 
 #define PWR_SIZE 32
-#define CUR_SIZE 32
+#define RMS_SIZE 32
 #define INITIAL_COUNT 10000
 #define CYCLE_COUNT 60
 #define SAMPLE_SHIFT 8
@@ -17,13 +25,15 @@
 
 #define ADC_MAX ((1 << ADC_BITS) - 1)
 #define VREF_1000 3300
+inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
 
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
-enum curState {initCur, avgCur, curDone};
-enum CHAN_TYPE {POWER_CHAN, CURRENT_CHAN};
+enum chanState {initRms, avgRms, rmsDone};
+enum CHAN_TYPE {POWER_CHAN, RMS_CHAN};
+enum ADC_NUM {ADC_1, ADC_2, ADC_X};
 
 typedef struct s_adcData
 {
@@ -85,6 +95,7 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
  int cycleCount;		/* cycle counter */
  T_RMS v;			/* voltage */
@@ -109,26 +120,29 @@ typedef struct s_rmsPwr
 typedef struct s_curData
 {
  uint32_t time;			/* time of reading */
- uint64_t sum;			/* current sum of squares */
  int samples;			/* samples */
+ uint64_t sum;			/* current sum of squares */
  int offset;
  int min;
  int max;
-} T_CUR_DATA, *P_CUR_DATA;
+} T_CHAN_DATA, *P_CHAN_DATA;
 
 typedef struct s_curBuf
 {
  int filPtr;			/* fill pointer */
  int empPtr;			/* empty pointer */
  int count;			/* number in buffer */
- T_CUR_DATA buf[PWR_SIZE];	/* buffer */
-} T_CUR_BUF, *P_CUR_BUF;
+ T_CHAN_DATA buf[RMS_SIZE];	/* buffer */
+} T_CHAN_BUF, *P_CHAN_BUF;
 
-typedef struct s_rmsCur
+typedef struct s_rmsChan
 {
- curState state;		/* curent measurement state */
- curState lastState;		/* last curent measurement state */
- T_RMS c;			/* current */
+ chanState state;		/* curent measurement state */
+ chanState lastState;		/* last curent measurement state */
+ char label;			/* channel label */
+ ADC_TypeDef *adc;		/* pointer to adc hardware */
+ P_RMS *adcRms;			/* pointer to isr pointer */
+ T_RMS rmsAccum;			/* current */
  int samples;			/* sample counter */
  int rms;			/* rms current */
  uint64_t rmsSum;		/* sum for rms calculation */
@@ -138,55 +152,74 @@ typedef struct s_rmsCur
  int displayTime;		/* time of last display */
  int minuteCount;
  struct s_chanCfg *cfg;		/* channel configuration */
- T_CUR_BUF curBuf;
-} T_RMSCUR, *P_RMSCUR;
+ T_CHAN_BUF chanBuf;
+} T_RMSCHAN, *P_RMSCHAN;
 
+typedef struct s_adcChan
+{
+ ADC_TypeDef *adc;
+ long unsigned int chan;
+} T_ADCCHAN;
+ 
 typedef struct s_chanCfg
 {
  CHAN_TYPE type;		/* channel type */
- int curChan;			/* current channel */
- int vltChan;			/* voltage channel */
- int curScale;			/* current scale */
- int voltScale;			/* voltage scale */
+ char label;			/* channel label */
+ T_ADCCHAN rmsAdc;		/* rms adc adc */
+ T_ADCCHAN voltAdc;		/* voltage adc */
+ union
+ {
+  float curScale;		/* current scale */
+  float rmsScale;		/* rms scale */
+ };
+ float voltScale;		/* voltage scale */
  union
  {
   P_RMSPWR pwr;			/* rms power data */
-  P_RMSCUR cur;			/* rms current data */
+  P_RMSCHAN rms;		/* single channal rms data */
  };
 } T_CHANCFG, *P_CHANCFG;
 
-#define MAX_CHAN 4
-#define MAX_CHAN_POWER 2
-#define MAX_CHAN_CURRENT 4
-
 EXT uint32_t clockFreq;
 EXT uint32_t tmrFreq;
-EXT T_RMSPWR rmsPower[MAX_CHAN_POWER];
-EXT T_RMSCUR rmsCurrent[MAX_CHAN_CURRENT];
 
 EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
+
+#if 0
+
+#define MAX_CHAN_POWER 1
+#define MAX_CHAN_RMS 2
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#else
+
+#define MAX_CHAN_POWER 0
+#define MAX_CHAN_RMS 1
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#endif	/* 0 */
+
+#if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
+#endif	/* __CURRENT__ */
+ 
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
-
-EXT int testIndex;
-EXT int testChan;
-EXT int16_t testData[2 * SAMPLES_CYCLE];
-EXT int testOffset;
 
 void rmsTestInit(void);
 void rmsTest(void);
 
-void rmsCfgInit(void);
+//void rmsCfgInit(void);
+void rmsCfgInit(P_CHANCFG cfg, int count);
 //#define POLL_UPDATE_POWER
 #if defined(POLL_UPDATE_POWER)
 void rmsUpdate(int sample, P_RMS rms);
 #else
 void currentUpdate();
 void updatePower(P_CHANCFG chan);
-void updateCurrent(P_CHANCFG chan);
+void updateRms(P_CHANCFG chan);
 #endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
@@ -194,6 +227,46 @@ void adcRun(void);
 void adcRead1(void);
 void adcStatus(void);
 void adcTmrTest(void);
+
+#if defined(__CURRENT__)
+
+#if defined(STM32F1)
+inline bool adcIntFlag(ADC_TypeDef *adc)
+{
+ return((adc->SR & ADC_SR_EOC) != 0);
+}
+
+inline void adcStart(ADC_TypeDef *adc)
+{
+ adc->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
+}
+
+inline void adcClrInt(ADC_TypeDef *adc)
+{
+ adc->SR &= ~ADC_SR_STRT;
+}
+#endif	/* STM32F1 */
+
+#if defined(STM32F3)
+inline bool adcIntFlag(ADC_TypeDef *adc)
+{
+ return(LL_ADC_IsActiveFlag_EOC(adc));
+}
+
+inline void adcStart(ADC_TypeDef *adc)
+{
+ LL_ADC_REG_StartConversion(adc);
+}
+
+inline void adcClrInt(ADC_TypeDef *adc)
+{
+ adc->ISR = ADC_ISR_ADRDY | ADC_ISR_EOSMP | ADC_ISR_EOC | ADC_ISR_EOS;
+}
+#endif	/* STM32F3 */
+
+#endif	/* __CURRENT__ */
+
+void currentCmds(void);
 
 inline uint32_t cpuCycles(void) { return(SysTick->VAL); }
 inline uint32_t interval(uint32_t start, uint32_t end)
@@ -208,38 +281,14 @@ typedef union
 {
  struct
  {
-  unsigned b0:1;
-  unsigned b1:1;
-  unsigned b2:1;
-  unsigned b3:1;
-  unsigned b4:1;
-  unsigned b5:1;
-  unsigned b6:1;
-  unsigned b7:1;
-  unsigned b8:1;
-  unsigned b9:1;
-  unsigned b10:1;
-  unsigned b11:1;
-  unsigned b12:1;
-  unsigned b13:1;
-  unsigned b14:1;
-  unsigned b15:1;
-  unsigned b16:1;
-  unsigned b17:1;
-  unsigned b18:1;
-  unsigned b19:1;
-  unsigned b20:1;
-  unsigned b21:1;
-  unsigned b22:1;
-  unsigned b23:1;
-  unsigned b24:1;
-  unsigned b25:1;
-  unsigned b26:1;
-  unsigned b27:1;
-  unsigned b28:1;
-  unsigned b29:1;
-  unsigned b30:1;
-  unsigned b31:1;
+  unsigned b0:1;  unsigned b1:1;  unsigned b2:1;  unsigned b3:1;
+  unsigned b4:1;  unsigned b5:1;  unsigned b6:1;  unsigned b7:1;
+  unsigned b8:1;  unsigned b9:1;  unsigned b10:1; unsigned b11:1;
+  unsigned b12:1; unsigned b13:1; unsigned b14:1; unsigned b15:1;
+  unsigned b16:1; unsigned b17:1; unsigned b18:1; unsigned b19:1;
+  unsigned b20:1; unsigned b21:1; unsigned b22:1; unsigned b23:1;
+  unsigned b24:1; unsigned b25:1; unsigned b26:1; unsigned b27:1;
+  unsigned b28:1; unsigned b29:1; unsigned b30:1; unsigned b31:1;
  };
  struct
  {

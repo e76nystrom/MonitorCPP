@@ -162,6 +162,9 @@ void lclcmd(int ch)
  {
   printf("\ncharOverflow %d\n", charOverflow);
  }
+ else if (ch == 'C')
+  currentCmds();
+#if 0
  else if (ch == 'e')
  {
   adcTmrStop();
@@ -220,6 +223,7 @@ void lclcmd(int ch)
    }
   }
  }
+#endif
 
 #endif
 
@@ -384,82 +388,7 @@ void lclcmd(int ch)
 #endif
 
  else if (ch == 'T')		/* thermocouple commands */
- {
-  while (1)
-  {
-   printf("\nthermocouple: ");
-   flushBuf();
-   while (dbgRxReady() == 0)	/* while no character */
-    ;
-   ch = dbgRxRead();
-   putBufChar(ch);
-   newline();
-   if (ch == 'i')
-   {
-    max56Init(MX56_TCTYPE_K, MX56_ONESHOT);
-   }
-   else if (ch == 't')
-   {
-    max56SetConversionType(MX56_ONESHOT);
-    delayMSec(200);
-    int32_t temp = max56ReadTemp();
-    char buf[10];
-    printf("temp %sc %5.2ff\n", max56FmtTemp(temp, buf, sizeof(buf)),
-	   (max56ConvTemp(temp) * 9) / 5 + 32);
-   }
-   else if (ch == 'c')
-   {
-    char buf[10];
-    int32_t temp = max56ReadCJ();
-    printf("cold junction %s %5.2ff\n", max56FmtCJ(temp, buf, sizeof(buf)),
-	   (max56ConvCJ(temp) * 9) / 5 + 32);
-   }
-   else if (ch == 'r')
-   {
-    printf(" 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15\n");
-    for (int i = 0; i < 16; i++)
-     printf("%02x ", (readb(i) & 0xff));
-    printf("\n");
-   }
-   else if (ch == 'd')
-   {
-    lcdInit();
-    unsigned int t = millis();
-    while (1)
-    {
-     if (dbgRxReady() != 0)
-     {
-      ch = dbgRxRead();
-      if (ch == 3)
-       break;
-     }
-     unsigned int t1 = millis();
-     if ((t1 - t) > 1000)
-     {
-      t = t1;
-      max56SetConversionType(MX56_ONESHOT);
-      delayMSec(200);
-      int32_t temp = max56ReadTemp();
-      setCursorBuf(0, 0);
-      float c = max56ConvTemp(temp);
-      char buf[22];
-      snprintf(buf, sizeof(buf), "%5.2fc %6.2ff", c, (c * 9.0) / 5.0 + 32.0);
-      //max56FmtTemp(temp, buf, sizeof(buf));
-      lcdString(buf);
-      i2cSend();
-     }
-     while (i2cCtl.state != I_IDLE)
-      i2cControl();
-     while (pollBufChar() != 0)
-      ;
-    }
-   }
-   else if (ch == 'x')
-   {
-    break;
-   }
-  }
- }
+  max56Cmds();
 
 #if DBGTRK
  else if (ch == 'T')		/* print track buffer */

@@ -5,6 +5,7 @@
 #include "stm32f1xx_ll_adc.h"
 #include "stm32f1xx_ll_dma.h"
 #endif	/* STM32F1 */
+
 #if defined(STM32F4)
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_ll_adc.h"
@@ -16,7 +17,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "math.h"
-//#include <cmath>
+
 #include <stdbool.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -45,6 +46,42 @@
 #include "current.h"
 #include "cyclectr.h"
 
+#if 1
+
+#define MAX_CHAN_POWER 1
+#define MAX_CHAN_RMS 2
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#else
+
+#define MAX_CHAN_POWER 0
+#define MAX_CHAN_RMS 1
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#endif	/* 0 */
+
+#if MAX_CHAN_POWER > 0
+T_RMSPWR rmsPower[MAX_CHAN_POWER];
+#endif	/* MAX_CHAN_POWER */
+#if MAX_CHAN_RMS > 0
+T_RMSCHAN rmsData[MAX_CHAN_RMS];
+#endif	/* MAX_CHAN_RMS */
+
+T_CHANCFG chanCfg[MAX_CHAN] =
+{
+#if 1
+ {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 20, 0.15119 * 10,
+  (P_RMSPWR) &rmsPower[0]},
+ {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 20, 0,
+  (P_RMSPWR) &rmsData[0]},
+ {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * 10, 0,
+  (P_RMSPWR) &rmsData[1]},
+#else
+ {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * 10, 0,
+  (P_RMSPWR) &rmsData[0]},
+#endif	/* 0 */
+};
+
 #define DMA 0
 #define SIMULTANEOUS 0
 
@@ -61,12 +98,20 @@ extern DMA_HandleTypeDef hdma_adc1;
 
 #if defined(__CURRENT_INC__)	// <-
 
+#if defined(STM32F1)
+#include "stm32f1xx_ll_adc.h"
+#endif	/* STM32F1 */
+
+#if defined(STM32F4)
+#include "stm32f4xx_ll_adc.h"
+#endif
+
 #if !defined(EXT)
 #define EXT extern
 #endif	/* EXT */
 
 #define PWR_SIZE 32
-#define CUR_SIZE 32
+#define RMS_SIZE 32
 #define INITIAL_COUNT 10000
 #define CYCLE_COUNT 60
 #define SAMPLE_SHIFT 8
@@ -78,13 +123,15 @@ extern DMA_HandleTypeDef hdma_adc1;
 
 #define ADC_MAX ((1 << ADC_BITS) - 1)
 #define VREF_1000 3300
+inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
 
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
-enum curState {initCur, avgCur, curDone};
-enum CHAN_TYPE {POWER_CHAN, CURRENT_CHAN};
+enum chanState {initRms, avgRms, rmsDone};
+enum CHAN_TYPE {POWER_CHAN, RMS_CHAN};
+enum ADC_NUM {ADC_1, ADC_2, ADC_X};
 
 typedef struct s_adcData
 {
@@ -146,6 +193,7 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
  int cycleCount;		/* cycle counter */
  T_RMS v;			/* voltage */
@@ -170,26 +218,29 @@ typedef struct s_rmsPwr
 typedef struct s_curData
 {
  uint32_t time;			/* time of reading */
- uint64_t sum;			/* current sum of squares */
  int samples;			/* samples */
+ uint64_t sum;			/* current sum of squares */
  int offset;
  int min;
  int max;
-} T_CUR_DATA, *P_CUR_DATA;
+} T_CHAN_DATA, *P_CHAN_DATA;
 
 typedef struct s_curBuf
 {
  int filPtr;			/* fill pointer */
  int empPtr;			/* empty pointer */
  int count;			/* number in buffer */
- T_CUR_DATA buf[PWR_SIZE];	/* buffer */
-} T_CUR_BUF, *P_CUR_BUF;
+ T_CHAN_DATA buf[RMS_SIZE];	/* buffer */
+} T_CHAN_BUF, *P_CHAN_BUF;
 
-typedef struct s_rmsCur
+typedef struct s_rmsChan
 {
- curState state;		/* curent measurement state */
- curState lastState;		/* last curent measurement state */
- T_RMS c;			/* current */
+ chanState state;		/* curent measurement state */
+ chanState lastState;		/* last curent measurement state */
+ char label;			/* channel label */
+ ADC_TypeDef *adc;		/* pointer to adc hardware */
+ P_RMS *adcRms;			/* pointer to isr pointer */
+ T_RMS rmsAccum;			/* current */
  int samples;			/* sample counter */
  int rms;			/* rms current */
  uint64_t rmsSum;		/* sum for rms calculation */
@@ -199,55 +250,74 @@ typedef struct s_rmsCur
  int displayTime;		/* time of last display */
  int minuteCount;
  struct s_chanCfg *cfg;		/* channel configuration */
- T_CUR_BUF curBuf;
-} T_RMSCUR, *P_RMSCUR;
+ T_CHAN_BUF chanBuf;
+} T_RMSCHAN, *P_RMSCHAN;
 
+typedef struct s_adcChan
+{
+ ADC_TypeDef *adc;
+ long unsigned int chan;
+} T_ADCCHAN;
+ 
 typedef struct s_chanCfg
 {
  CHAN_TYPE type;		/* channel type */
- int curChan;			/* current channel */
- int vltChan;			/* voltage channel */
- int curScale;			/* current scale */
- int voltScale;			/* voltage scale */
+ char label;			/* channel label */
+ T_ADCCHAN rmsAdc;		/* rms adc adc */
+ T_ADCCHAN voltAdc;		/* voltage adc */
+ union
+ {
+  float curScale;		/* current scale */
+  float rmsScale;		/* rms scale */
+ };
+ float voltScale;		/* voltage scale */
  union
  {
   P_RMSPWR pwr;			/* rms power data */
-  P_RMSCUR cur;			/* rms current data */
+  P_RMSCHAN rms;		/* single channal rms data */
  };
 } T_CHANCFG, *P_CHANCFG;
 
-#define MAX_CHAN 4
-#define MAX_CHAN_POWER 2
-#define MAX_CHAN_CURRENT 4
-
 EXT uint32_t clockFreq;
 EXT uint32_t tmrFreq;
-EXT T_RMSPWR rmsPower[MAX_CHAN_POWER];
-EXT T_RMSCUR rmsCurrent[MAX_CHAN_CURRENT];
 
 EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
+
+#if 0
+
+#define MAX_CHAN_POWER 1
+#define MAX_CHAN_RMS 2
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#else
+
+#define MAX_CHAN_POWER 0
+#define MAX_CHAN_RMS 1
+#define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
+
+#endif	/* 0 */
+
+#if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
+#endif	/* __CURRENT__ */
+ 
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
-
-EXT int testIndex;
-EXT int testChan;
-EXT int16_t testData[2 * SAMPLES_CYCLE];
-EXT int testOffset;
 
 void rmsTestInit(void);
 void rmsTest(void);
 
-void rmsCfgInit(void);
+//void rmsCfgInit(void);
+void rmsCfgInit(P_CHANCFG cfg, int count);
 //#define POLL_UPDATE_POWER
 #if defined(POLL_UPDATE_POWER)
 void rmsUpdate(int sample, P_RMS rms);
 #else
 void currentUpdate();
 void updatePower(P_CHANCFG chan);
-void updateCurrent(P_CHANCFG chan);
+void updateRms(P_CHANCFG chan);
 #endif	/* POLL_UPDATE_POWER */
 
 void adcRead(void);
@@ -255,6 +325,46 @@ void adcRun(void);
 void adcRead1(void);
 void adcStatus(void);
 void adcTmrTest(void);
+
+#if defined(__CURRENT__)
+
+#if defined(STM32F1)
+inline bool adcIntFlag(ADC_TypeDef *adc)
+{
+ return((adc->SR & ADC_SR_EOC) != 0);
+}
+
+inline void adcStart(ADC_TypeDef *adc)
+{
+ adc->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
+}
+
+inline void adcClrInt(ADC_TypeDef *adc)
+{
+ adc->SR &= ~ADC_SR_STRT;
+}
+#endif	/* STM32F1 */
+
+#if defined(STM32F3)
+inline bool adcIntFlag(ADC_TypeDef *adc)
+{
+ return(LL_ADC_IsActiveFlag_EOC(adc));
+}
+
+inline void adcStart(ADC_TypeDef *adc)
+{
+ LL_ADC_REG_StartConversion(adc);
+}
+
+inline void adcClrInt(ADC_TypeDef *adc)
+{
+ adc->ISR = ADC_ISR_ADRDY | ADC_ISR_EOSMP | ADC_ISR_EOC | ADC_ISR_EOS;
+}
+#endif	/* STM32F3 */
+
+#endif	/* __CURRENT__ */
+
+void currentCmds(void);
 
 inline uint32_t cpuCycles(void) { return(SysTick->VAL); }
 inline uint32_t interval(uint32_t start, uint32_t end)
@@ -269,38 +379,14 @@ typedef union
 {
  struct
  {
-  unsigned b0:1;
-  unsigned b1:1;
-  unsigned b2:1;
-  unsigned b3:1;
-  unsigned b4:1;
-  unsigned b5:1;
-  unsigned b6:1;
-  unsigned b7:1;
-  unsigned b8:1;
-  unsigned b9:1;
-  unsigned b10:1;
-  unsigned b11:1;
-  unsigned b12:1;
-  unsigned b13:1;
-  unsigned b14:1;
-  unsigned b15:1;
-  unsigned b16:1;
-  unsigned b17:1;
-  unsigned b18:1;
-  unsigned b19:1;
-  unsigned b20:1;
-  unsigned b21:1;
-  unsigned b22:1;
-  unsigned b23:1;
-  unsigned b24:1;
-  unsigned b25:1;
-  unsigned b26:1;
-  unsigned b27:1;
-  unsigned b28:1;
-  unsigned b29:1;
-  unsigned b30:1;
-  unsigned b31:1;
+  unsigned b0:1;  unsigned b1:1;  unsigned b2:1;  unsigned b3:1;
+  unsigned b4:1;  unsigned b5:1;  unsigned b6:1;  unsigned b7:1;
+  unsigned b8:1;  unsigned b9:1;  unsigned b10:1; unsigned b11:1;
+  unsigned b12:1; unsigned b13:1; unsigned b14:1; unsigned b15:1;
+  unsigned b16:1; unsigned b17:1; unsigned b18:1; unsigned b19:1;
+  unsigned b20:1; unsigned b21:1; unsigned b22:1; unsigned b23:1;
+  unsigned b24:1; unsigned b25:1; unsigned b26:1; unsigned b27:1;
+  unsigned b28:1; unsigned b29:1; unsigned b30:1; unsigned b31:1;
  };
  struct
  {
@@ -398,6 +484,10 @@ unsigned int millis(void)
 
 #define SAMPLES 16
 uint16_t buf[2 * (SAMPLES + 8)];
+uint16_t *testPtr;
+int testCount = 0;
+int testSave = 0;
+ 
 uint16_t *adc1Ptr;
 uint16_t *adc2Ptr;
 
@@ -410,6 +500,7 @@ int rmsCount;
 
 void rmsTestInit(void)
 {
+#if MAX_CHAN_POWER > 0
  memset((void *) &rmsPower, 0, sizeof(rmsPower));
  adcOffset = (1 << ADC_BITS) / 2;
  adcScale = (int) (((1 << ADC_BITS) - 1) / 2.5);
@@ -418,6 +509,7 @@ void rmsTestInit(void)
  pfAngle = ((double) M_PI) / 20.0;
  printf("angleInc %7.4f pfAngle %7.4f\n", angleInc, pfAngle);
  rmsCount = 0;
+#endif
 }
 
 bool adcTest = false;
@@ -425,6 +517,7 @@ T_ADC_DATA adcData;
 
 void rmsTest(void)
 {
+#if MAX_CHAN_POWER > 0
  flushBuf();
  rmsCount = 0;
  P_RMSPWR pwr = &rmsPower[0];
@@ -433,6 +526,7 @@ void rmsTest(void)
  pwr->samples = 0;
  pwrActive = true;
  adcRead();
+#endif
 
 #if defined(POLL_UPDATE_POWER)
  T_ADC_DATA adcData;
@@ -459,12 +553,13 @@ void rmsTest(void)
  printf("adcOffset %d adcScale %d rms %d\n",
 	adcOffset, adcScale, (int) (adcScale / sqrt(2)));
  printf("offset %d vRms %d v %5.3f\n",
-	pwr->v.offset, pwr->vRms, ((pwr->vRms * (float) 3300) / 4095) / 1000);
+	pwr->v.offset, pwr->vRms, (float) scaleAdc(pwr->vRms) / 1000);
  printf("offset %d cRms %d c %5.3f\n",
-	pwr->c.offset, pwr->cRms, ((pwr->cRms * (float) 3300) / 4095) / 1000);
+	pwr->c.offset, pwr->cRms, (float) scaleAdc(pwr->cRms) / 1000);
 #endif	/* POLL_UPDATE_POWER */
 }
 
+#if 0
 void rmsCfgInit(void)
 {
  maxChan = 2;			/* maximum channel */
@@ -483,8 +578,8 @@ void rmsCfgInit(void)
  pwr->state = initAvg;
  pwr->lastState = initAvg;
  cfg->pwr = pwr;
- cfg->vltChan = ADC1_0;
- cfg->curChan = ADC2_0;
+ cfg->voltAdc.chan = ADC1_0;
+ cfg->rmsAdc.chan = ADC2_0;
 
  cfg++;
 
@@ -497,7 +592,65 @@ void rmsCfgInit(void)
  cur->state = initCur;
  cur->lastState = initCur;
  cfg->cur = cur;
- cfg->curChan = ADC1_1;
+ cfg->rmsAdc.chan = ADC1_1;
+}
+#endif
+
+void adcChanInit(T_ADCCHAN adc)
+{
+ printf("adcChanInit adc %08x chan %08x\n",
+	(unsigned int) adc.adc, (unsigned int) adc.chan);
+ LL_ADC_SetChannelSamplingTime(adc.adc, adc.chan, SAMPLING_TIME);
+}
+
+void rmsCfgInit(P_CHANCFG cfg, int count)
+{
+ printf("rmsCfgInit %08x n %d\n", (unsigned int) cfg, count);
+ printf("adc1Rms %08x adc2Rms %08x\n",
+	(unsigned int) &adc1Rms, (unsigned int) &adc2Rms);
+
+ maxChan = count;		/* maximum channel */
+ curChan = 0;			/* current channel */
+
+ for (int i = 0; i < count; i++)
+ {
+  adcChanInit(cfg->rmsAdc);
+  switch (cfg->type)
+  {
+  case POWER_CHAN:
+  {
+#if MAX_CHAN_POWER > 0
+   adcChanInit(cfg->voltAdc);
+   P_RMSPWR pwr = cfg->pwr;
+   memset((void *) pwr, 0, sizeof(T_RMSPWR));
+   pwr->state = initAvg;
+   pwr->lastState = initAvg;
+   pwr->label = cfg->label;
+#endif	/* MAX_CHAN_POWER */
+  }
+  break;
+
+  case RMS_CHAN:
+  {
+#if MAX_CHAN_RMS > 0
+   P_RMSCHAN rms = cfg->rms;
+   memset((void *) rms, 0, sizeof(T_RMSCHAN));
+   rms->adc = cfg->rmsAdc.adc;
+   if (rms->adc == ADC1)
+    rms->adcRms = &adc1Rms;
+   else if (rms->adc == ADC2)
+    rms->adcRms = &adc2Rms;
+   rms->state = initRms;
+   rms->lastState = initRms;
+   rms->label = cfg->label;
+   printf("%d %c adcData %08x\n", i, rms->label, (unsigned int) rms->adcRms);
+#endif	/* MAX_CHAN_RMS */
+  }
+  break;
+
+  }
+  cfg++;
+ }
 }
 
 #if defined(POLL_UPDATE_POWER)
@@ -718,9 +871,9 @@ void currentUpdate()
    {
     updatePower(chan);
    }
-   else if (chan->type == CURRENT_CHAN)
+   else if (chan->type == RMS_CHAN)
    {
-    updateCurrent(chan);
+    updateRms(chan);
    }
   }
  }
@@ -779,57 +932,69 @@ void updatePower(P_CHANCFG chan)
   {
    pwr->displayTime += DISPLAY_INTERVAL;
    newline();
-   printf("sample %d vSum %d vRms %d cSum %d cRms %d\n"
-	  "pwrSum %d, realPwr %d aprntPwr %d pwrFactor %d\n",
+   printf("p sample %d vSum %d vRms %d cSum %d cRms %d\n"
+	  "p pwrSum %d, realPwr %d aprntPwr %d pwrFactor %d\n",
 	  samples, buf->vSum, pwr->vRms, buf->cSum, pwr->cRms,
 	  buf->pwrSum, pwr->realPwr, pwr->aprntPwr, pwr->pwrFactor);
   }
  }
 }
 
-void updateCurrent(P_CHANCFG chan)
+void updateRms(P_CHANCFG chan)
 {
- P_RMSCUR cur = chan->cur;
- while (cur->curBuf.count != 0)
+ P_RMSCHAN rms = chan->rms;
+ while (rms->chanBuf.count != 0)
  {
   dbg0Set();
-  int p = cur->curBuf.empPtr;
-  P_CUR_DATA buf = &cur->curBuf.buf[p];
+  int p = rms->chanBuf.empPtr;
+  P_CHAN_DATA buf = &rms->chanBuf.buf[p];
   p += 1;
-  if (p >= CUR_SIZE)
+  if (p >= RMS_SIZE)
    p = 0;
-  cur->curBuf.empPtr = p;
+  rms->chanBuf.empPtr = p;
   int samples = buf->samples;
-  cur->rms = iSqrt(buf->sum / samples);
+  rms->rms = iSqrt(buf->sum / samples);
 
-  cur->rmsSamples += samples;
-  cur->rmsSum += buf->sum;
-  cur->minuteCount += 1;
+  rms->rmsSamples += samples;
+  rms->rmsSum += buf->sum;
+  rms->minuteCount += 1;
 
   __disable_irq();
-  cur->curBuf.count -= 1;
+  rms->chanBuf.count -= 1;
   __enable_irq();
   dbg0Clr();
-  putDbg('C');
+  putDbg('*');
 
   uint32_t t = millis();
-  if ((t - cur->measureTime) >= MEASURE_INTERVAL)
+  if ((t - rms->measureTime) >= MEASURE_INTERVAL)
   {
    char convBuf[32];
-   cur->measureTime += MEASURE_INTERVAL;
-   cur->minuteRms = iSqrt(int(cur->rmsSum / cur->rmsSamples));
-   int maRms = ((cur->minuteRms * VREF_1000) / ADC_MAX) * chan->curScale;
-   int amps = maRms / 1000;
-   int mAmps = maRms - (amps * 1000);
+   rms->measureTime += MEASURE_INTERVAL;
+   rms->minuteRms = iSqrt(int(rms->rmsSum / rms->rmsSamples));
 #if !defined(ARDUINO_ARCH_STM32)
    newline();
 #endif	/* ARDUINO_ARCH_STM32 */
-   printf("minute rms count %d samples %5d sum %10s rms %4d %4d %2d.%03d\n",
-	  cur->minuteCount, cur->rmsSamples, i64toa(cur->rmsSum, convBuf),
-	  cur->minuteRms, maRms, amps, mAmps);
-   cur->minuteCount = 0;
-   cur->rmsSamples = 0;
-   cur->rmsSum = 0;
+   if (rms->label == 'c')
+   {
+    int mRms = (int) (scaleAdc(rms->minuteRms) * chan->rmsScale);
+    int val = mRms / 1000;
+    int mval = mRms - (val * 1000);
+    printf("c minute rms count %d samples %5d sum %10s rms %4d %4d %2d.%03d\n",
+	   rms->minuteCount, rms->rmsSamples,
+	   i64toa(rms->rmsSum, convBuf), rms->minuteRms, mRms, val, mval);
+   }
+   else
+   {
+    int Rms = (int) ((scaleAdc(rms->minuteRms)) * chan->rmsScale);
+    int val = Rms / 10;
+    int mval = Rms - (val * 10);
+    printf("v minute rms count %d samples %5d sum %10s rms %4d %4d %3d.%01d\n",
+	   rms->minuteCount, rms->rmsSamples,
+	   i64toa(rms->rmsSum, convBuf), rms->minuteRms, Rms, val, mval);
+   }
+   rms->minuteCount = 0;
+   rms->rmsSamples = 0;
+   rms->rmsSum = 0;
 
 #if defined(ARDUINO_ARCH_STM32)
 #if defined(WIFI_ENA)
@@ -842,24 +1007,26 @@ void updateCurrent(P_CHANCFG chan)
 #endif	/* ARDUINO_ARCH_STM32 */
   }
   
-  if ((t - cur->displayTime) >= DISPLAY_INTERVAL)
+  if ((t - rms->displayTime) >= DISPLAY_INTERVAL)
   {
    char convBuf[32];
-   cur->displayTime += DISPLAY_INTERVAL;
+   rms->displayTime += DISPLAY_INTERVAL;
    int offset = buf->offset >> SAMPLE_SHIFT;
 #if !defined(ARDUINO_ARCH_STM32)
    newline();
 #endif	/* ARDUINO_ARCH_STM32 */
-   printf("sample %3d min %4d %4d max %4d %4d offset %4d sum %10s rms %4d\n",
-	  samples, buf->min, offset - buf->min, buf->max, buf->max - offset,
-	  offset, i64toa(buf->sum, convBuf), (cur->rms * VREF_1000) / ADC_MAX);
+   printf("%c sample %3d min %4d %4d max %4d %4d delta %4d "
+	  "offset %4d sum %10s rms %4d %4d\n",
+	  rms->label, samples, buf->min, offset - buf->min, buf->max,
+	  buf->max - offset, scaleAdc(buf->max - buf->min), offset,
+	  i64toa(buf->sum, convBuf), rms->rms, scaleAdc(rms->rms));
   }
  }
 }
 
 #endif	/* POLL_UPDATE_POWER */
 
-void printBufC(void)
+void printBufC(bool scale)
 {
  int count = sizeof(buf) / sizeof(uint16_t);
  uint16_t *p = (uint16_t *) buf;
@@ -867,7 +1034,8 @@ void printBufC(void)
  while (1)
  {
   uint16_t val = *p++;
-  val = (val * 3300) / 4095;
+  if (scale)
+   val = scaleAdc(val);
   printf("%4d ", (int) val);
   count -= 1;
   col++;
@@ -1205,7 +1373,7 @@ void adcRead1(void)
 #endif /* HAL */
 
  cfgInfo();
- printBufC();
+ printBufC(1);
 
 #if HAL == 0
  if (HAL == 0)
@@ -1220,7 +1388,7 @@ void adcRead1(void)
 
 void adcRun(void)
 {
- rmsCfgInit();		/* initialize configuration */
+ rmsCfgInit(&chanCfg[0], sizeof(chanCfg) / sizeof(T_CHANCFG)); /* init cfg */
  adcTest = false;
  pwrActive = true;
  adcRead();
@@ -1331,7 +1499,7 @@ void adcStatus(void)
  dmaChannelInfo(DMA1_Channel1, 1);
  newline();
 #endif	/* DMA */
- printBufC();
+ printBufC(1);
 }
 
 void adcTmrTest(void)
@@ -1399,8 +1567,8 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
 
  if (pwrActive)
  {
-  P_CHANCFG chan = &chanCfg[curChan];
   dbg1Set();
+  P_CHANCFG chan = &chanCfg[curChan];
  
   if (adcTest)
   {
@@ -1412,9 +1580,8 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
    
   if (chan->type == POWER_CHAN)
   {
-   testChan = chan->vltChan;
-   LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, chan->vltChan);
-   LL_ADC_REG_SetSequencerRanks(ADC2, LL_ADC_REG_RANK_1, chan->curChan);
+   LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, chan->voltAdc.chan);
+   LL_ADC_REG_SetSequencerRanks(ADC2, LL_ADC_REG_RANK_1, chan->rmsAdc.chan);
    P_RMSPWR pwr = chan->pwr;
    adc1Rms = &pwr->v;
    adc2Rms = &pwr->c;
@@ -1453,12 +1620,7 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
     {
      if (pwr->lastBelow)
      {
-#if defined(Dbg5_Pin)
-      if ((Dbg5_GPIO_Port->ODR & Dbg5_Pin) != 0)
-       dbg5Clr();
-      else
-       dbg5Set();
-#endif	/* Dbg5_Pin */
+      dbg5Toggle();
       pwr->cycleCount -= 1;
       if (pwr->cycleCount <= 0)
       {
@@ -1498,89 +1660,76 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
     break;
    }
 
-#if defined(STM32F1)
-   ADC2->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
-   ADC1->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-   LL_ADC_REG_StartConversion(ADC2);
-   LL_ADC_REG_StartConversion(ADC1);
-#endif	/* STM32F3 */
+   adcStart(ADC2);
+   adcStart(ADC1);
   }
-  else if (chan->type == CURRENT_CHAN)
+  else if (chan->type == RMS_CHAN)
   {
-   testChan = chan->curChan;
-   LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, chan->curChan);
-   P_RMSCUR cur = chan->cur;
-   adc1Rms = &cur->c;
-   cur->samples += 1;
-   switch (cur->state)
+   P_RMSCHAN rms = chan->rms;
+   *(rms->adcRms) = &rms->rmsAccum;
+   LL_ADC_REG_SetSequencerRanks(rms->adc, LL_ADC_REG_RANK_1,
+				chan->rmsAdc.chan);
+
+   rms->samples += 1;
+   switch (rms->state)
    {
-   case initCur:
-    if (cur->samples >= INITIAL_COUNT)
+   case initRms:
+    if (rms->samples >= INITIAL_COUNT)
     {
-     cur->state = avgCur;
-     cur->samples = 0;
+     rms->state = avgRms;
+     rms->samples = 0;
      uint32_t t = millis();
-     cur->displayTime = t;
-     cur->measureTime = t;
-     cur->minuteCount = 0;
-     cur->rmsSamples = 0;
-     cur->rmsSum = 0;
+     rms->displayTime = t;
+     rms->measureTime = t;
+     rms->minuteCount = 0;
+     rms->rmsSamples = 0;
+     rms->rmsSum = 0;
     }
     break;
 
-   case avgCur:
+   case avgRms:
    {
-    int samples = cur->samples;
+    int samples = rms->samples;
     if (samples >= (CYCLES_SEC * SAMPLES_CYCLE))
     {
-#if defined(Dbg4_Pin)
-     if ((Dbg4_GPIO_Port->ODR &  Dbg4_Pin) != 0)
-      dbg4Clr();
-     else
-      dbg4Set();
-#endif	/* Dbg4_Pin */
-     if (cur->curBuf.count < CUR_SIZE)
+     dbg4Toggle();
+     if (rms->chanBuf.count < RMS_SIZE)
      {
-      int ptr = cur->curBuf.filPtr;
-      P_CUR_DATA curData = &cur->curBuf.buf[ptr];
+      rms->chanBuf.count += 1;
+      int ptr = rms->chanBuf.filPtr;
+      P_CHAN_DATA chanData = &rms->chanBuf.buf[ptr];
       ptr += 1;
-      if (ptr >= CUR_SIZE)
+      if (ptr >= RMS_SIZE)
        ptr = 0;
-      cur->curBuf.filPtr = ptr;
-      curData->time = millis();
-      curData->samples = samples;
-      P_RMS c = &cur->c;
-      curData->sum = c->sum;
-      curData->offset = c->offset;
-      curData->min = c->min;
-      curData->max = c->max;
-      c->max = 0;
-      c->min = 1 << ADC_BITS;
-      cur->curBuf.count += 1;
-      putDbg('c');
+      rms->chanBuf.filPtr = ptr;
+
+      chanData->time = millis();
+      chanData->samples = samples;
+      P_RMS accum = &rms->rmsAccum;
+      chanData->sum = accum->sum;
+      chanData->offset = accum->offset;
+      chanData->min = accum->min;
+      chanData->max = accum->max;
+
+      accum->sum= 0;
+      accum->max = 0;
+      accum->min = 1 << ADC_BITS;
+      rms->samples = 0;
+      putDbg(rms->label);
      }
-     cur->c.sum = 0;
-     cur->samples = 0;
     }
     break;
    }
 
-   case curDone:
+   case rmsDone:
     break;
      
    default:
-    cur->state = initCur;
+    rms->state = initRms;
     break;
    }
 
-#if defined(STM32F1)
-   ADC1->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-   LL_ADC_REG_StartConversion(ADC1);
-#endif	/* STM32F3 */
+   adcStart(rms->adc);
   }
 
   curChan += 1;
@@ -1595,14 +1744,8 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
    adc1Counter -= 1;
    if (extTrig == 0)
    {
-#if defined(STM32F1)
-    ADC2->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
-    ADC1->CR2 |= (ADC_CR2_SWSTART | ADC_CR2_EXTTRIG);
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-    LL_ADC_REG_StartConversion(ADC2);
-    LL_ADC_REG_StartConversion(ADC1);
-#endif	/* STM32F3 */
+    adcStart(ADC2);
+    adcStart(ADC1);
     dbg1Clr();
    }
   } /* adc1Counter > 0 */
@@ -1615,16 +1758,22 @@ extern "C" void TIM1_CC_IRQHandler(void)
  timCCInts += 1;
 }
 
+inline void saveData(int sample)
+{
+ if (testSave)
+ {
+  if (--testCount < 0)
+  {
+   testCount = sizeof(buf) / sizeof(uint16_t);
+   testPtr = buf;
+  }
+  *testPtr++ = sample;
+ }
+}
+
 extern "C" void ADC1_2_IRQHandler(void)
 {
- if (				/* if adc1 interrupt active */
-#if defined(STM32F1)
-  ADC1->SR & ADC_SR_EOC
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-  LL_ADC_IsActiveFlag_EOC(ADC1)
-#endif	/* STM32F3 */
-  )
+ if (adcIntFlag(ADC1))		/* if adc1 interrupt active */
  {
   dbg2Set();
   adc1Ints += 1;
@@ -1633,24 +1782,19 @@ extern "C" void ADC1_2_IRQHandler(void)
   {
    P_RMS rms = adc1Rms;
    int sample = ADC1->DR;
+
    if (adcTest)
     sample = adcData.voltage;
+
    if (sample > rms->max)
     rms->max = sample;
    if (sample < rms->min)
     rms->min = sample;
-   int offset = rms->offset;
-   if (testChan == ADC1_1)
-   {
-    if (testIndex < (2 * SAMPLES_CYCLE))
-    {
-     testData[testIndex] = sample;
-     testIndex += 1;
-     testOffset = offset;
-    }
-   }
-   sample <<= SAMPLE_SHIFT;
+
    rms->sample = sample;
+   sample <<= SAMPLE_SHIFT;
+
+   int offset = rms->offset;
    offset = offset + ((sample - offset) >> 10);
    rms->offset = offset;
    sample -= offset;
@@ -1672,23 +1816,11 @@ extern "C" void ADC1_2_IRQHandler(void)
    }
   } /* pwrActive */
 
-#if defined(STM32F1)
-  ADC1->SR &= ~ADC_SR_STRT;
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-  ADC1->ISR = ADC_ISR_ADRDY | ADC_ISR_EOSMP | ADC_ISR_EOC | ADC_ISR_EOS;
-#endif	/* STM32F3 */
+  adcClrInt(ADC1);
   dbg2Clr();
  } /* adc1 interrupt active */
  
- if (				/* if adc2 interrrupt active */
-#if defined(STM32F1)
-  ADC2->SR & ADC_SR_EOC
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-  LL_ADC_IsActiveFlag_EOC(ADC2)
-#endif	/* STM32F3 */
-  )
+ if (adcIntFlag(ADC2))		/* if adc2 interrupt active */
  {
   dbg3Set();
   adc2Ints += 1;
@@ -1697,10 +1829,20 @@ extern "C" void ADC1_2_IRQHandler(void)
   {
    P_RMS rms = adc2Rms;
    int sample = ADC2->DR;
+
+   saveData(sample);
+
    if (adcTest)
     sample = adcData.current;
-   sample <<= SAMPLE_SHIFT;
+
+   if (sample > rms->max)
+    rms->max = sample;
+   if (sample < rms->min)
+    rms->min = sample;
+
    rms->sample = sample;
+   sample <<= SAMPLE_SHIFT;
+
    int offset = rms->offset;
    offset = offset + ((sample - offset) >> 10);
    rms->offset = offset;
@@ -1723,14 +1865,95 @@ extern "C" void ADC1_2_IRQHandler(void)
    }
   } /* pwrActive */
 
-#if defined(STM32F1)
-  ADC2->SR &= ~ADC_SR_STRT;
-#endif	/* STM32F1 */
-#if defined(STM32F3)
-  ADC2->ISR = ADC_ISR_ADRDY | ADC_ISR_EOSMP | ADC_ISR_EOC | ADC_ISR_EOS;
-#endif	/* STM32F3 */
+  adcClrInt(ADC1);
   dbg3Clr();
  } /* adc2 interrupt active */
 }
+
+#if !defined(ARDUINO_ARCH_STM32)
+void currentCmds(void)
+{
+ while (1)
+ {
+  printf("\nC: ");
+  flushBuf();
+  while (dbgRxReady() == 0)	/* while no character */
+  {
+   pollBufChar();		/* check for data to output */
+  }
+  char ch = dbgRxRead();
+  putBufChar(ch);
+  newline();
+  if (ch == 'e')
+  {
+   adcTmrStop();
+   adcTmrClrIE();
+   printf("\ntimer stopped\n");
+  }
+  else if (ch == 'p')
+  {
+   newline();
+   printBufC(0);
+  }
+  else if (ch == 'a')
+  {
+   newline();
+   adcRead1();
+  }
+  else if (ch == 'r')
+  {
+   newline();
+   testCount = 0;
+   testSave = true;
+   adcRun();
+   break;
+  }
+  else if (ch == 's')
+  {
+   newline();
+   adcStatus();
+  }
+  else if (ch == 't')
+  {
+   newline();
+   rmsTestInit();
+   rmsTest();
+  }
+#if 0
+  else if (ch == 'd')
+  {
+   newline();
+   int count = 2 * SAMPLES_CYCLE;
+   int16_t *p = testData;
+   int col = 0;
+   int offset = testOffset >> SAMPLE_SHIFT;
+   while (1)
+   {
+    uint16_t val = *p++;
+
+    printf("%5d ", (int) (val - offset));
+    count -= 1;
+    col++;
+    if (col == 8)
+    {
+     col = 0;
+     printf("\n");
+    }
+    if (count == 0)
+    {
+     if (col != 0)
+      printf("\n");
+     break;
+    }
+   }
+  }
+#endif
+  else if (ch == 'x')
+  {
+   break;
+  }
+ }
+}
+#endif	/* ARDUINO_ARCH_STM32 */
 
 #endif	/* __CURRENT__ */

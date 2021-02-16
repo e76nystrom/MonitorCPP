@@ -53,74 +53,40 @@ inline void dbg3Clr() {}
 inline void dbg4Ini() {}
 inline void dbg4Set() {Dbg4_GPIO_Port->BSRR = Dbg4_Pin;}
 inline void dbg4Clr() {Dbg4_GPIO_Port->BSRR = (Dbg4_Pin << 16);}
+inline bool dbg4() {return((Dbg4_GPIO_Port->ODR & Dbg4_Pin) != 0);}
+inline void dbg4Toggle()
+{
+ if (dbg4())
+  dbg4Clr();
+ else
+  dbg4Set();
+}
 #else
 inline void dbg4Ini() {}
 inline void dbg4Set() {}
 inline void dbg4Clr() {}
+inline bool dbg4() {return(0);}
+inline void dbg4Toggle() {}
 #endif
 
 #ifdef Dbg5_Pin
 inline void dbg5Ini() {}
 inline void dbg5Set() {Dbg5_GPIO_Port->BSRR = Dbg5_Pin;}
 inline void dbg5Clr() {Dbg5_GPIO_Port->BSRR = (Dbg5_Pin << 16);}
+inline bool dbg5() {return((Dbg5_GPIO_Port->ODR & Dbg5_Pin) != 0);}
+inline void dbg5Toggle()
+{
+ if (dbg5())
+  dbg5Clr();
+ else
+  dbg5Set();
+}
 #else
 inline void dbg5Ini() {}
 inline void dbg5Set() {}
 inline void dbg5Clr() {}
-#endif
-
-/* toggle on capture input */
-#ifdef Dbg0_Pin
-inline void dbgIntCSet() {Dbg0_GPIO_Port->BSRR = Dbg0_Pin;}
-inline void dbgIntCClr() {Dbg0_GPIO_Port->BSRR = (Dbg0_Pin << 16);}
-#else
-inline void dbgIntCSet() {}
-inline void dbgIntCClr() {}
-#endif
-
-/* toggle on output pulse */
-#ifdef Dbg1_Pin
-inline void dbgIntPSet() {Dbg1_GPIO_Port->BSRR = Dbg1_Pin;}
-inline void dbgIntPClr() {Dbg1_GPIO_Port->BSRR = (Dbg1_Pin << 16);}
-#else
-inline void dbgIntPSet() {}
-inline void dbgIntPClr() {}
-#endif
-
-/* toggle on input cycle */
-#ifdef Dbg2_Pin
-inline void dbgCycleSet() {Dbg2_GPIO_Port->BSRR = Dbg2_Pin;}
-inline void dbgCycleClr() {Dbg2_GPIO_Port->BSRR = (Dbg2_Pin << 16);}
-#else
-inline void dbgCycleSet() {}
-inline void dbgCycleClr() {}
-#endif
-
-/* end of internal pulse cycle */
-#ifdef Dbg3_Pin
-inline void dbgCycEndSet() {Dbg3_GPIO_Port->BSRR = Dbg3_Pin;}
-inline void dbgCycEndClr() {Dbg3_GPIO_Port->BSRR = (Dbg3_Pin << 16);}
-#else
-inline void dbgCycEndSet() {}
-inline void dbgCycEndClr() {}
-#endif
-
-/* length of capture isr */
-#ifdef Dbg4_Pin
-inline void dbgCapIsrSet() {Dbg4_GPIO_Port->BSRR = Dbg4_Pin;}
-inline void dbgCapIsrClr() {Dbg4_GPIO_Port->BSRR = (Dbg4_Pin << 16);}
-#else
-inline void dbgCapIsrSet() {}
-inline void dbgCapIsrClr() {}
-#endif
-
-/* length of internal isr */
-#ifdef Dbg5_Pin
-inline void dbgIntIsrSet() {Dbg5_GPIO_Port->BSRR = Dbg5_Pin;}
-inline void dbgIntIsrClr() {Dbg5_GPIO_Port->BSRR = (Dbg5_Pin << 16);}
-#else
-inline void dbgIntIsrSet() {}
-inline void dbgIntIsrClr() {}
+inline bool dbg5() {return(0);}
+inline void dbg5Toggle() {}
 #endif
 
 #endif /* __DBG_H */

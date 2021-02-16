@@ -255,7 +255,7 @@ int16_t monitorLoop(void)
 
  #endif	 /* HAL */
 
- rmsCfgInit();
+ rmsCfgInit(&chanCfg[0], sizeof(chanCfg) / sizeof(T_CHANCFG)); /* init cfg */
  pwrUpdTime = millis() - PWR_INTERVAL;
 
  ledUpdTime = millis();
@@ -297,9 +297,9 @@ int16_t monitorLoop(void)
      {
       updatePower(chan);
      }
-     else if (chan->type == CURRENT_CHAN)
+     else if (chan->type == RMS_CHAN)
      {
-      updateCurrent(chan);
+      updateRms(chan);
      }
     }
    }
