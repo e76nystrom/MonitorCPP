@@ -12,23 +12,27 @@
 #define EXT extern
 #endif	/* EXT */
 
-#define PWR_SIZE 16
-#define RMS_SIZE 16
-#define INITIAL_COUNT 10000
-#define CYCLE_COUNT 60
+#define PWR_SIZE 16		/* power buffers */
+#define RMS_SIZE 16		/* rms buffers */
+#define INITIAL_SAMPLES 10000	/* initial samples for offset */
+#define CYCLE_COUNT 60		/* cycles saved per buffer */
 #define SAMPLE_SHIFT 8
 
-#define CYCLES_SEC 60
-#define SAMPLES_CYCLE 16
+#define CYCLES_SEC 60		/* line frequency */
+#define SAMPLES_CYCLE 16	/* samples per wave */
 #define CHAN_PAIRS 2
-#define ADC_BITS 12
+#define ADC_BITS 12		/* number of adc bits */
 
-#define ADC_MAX ((1 << ADC_BITS) - 1)
-#define VREF_1000 3300
-#define VREF_10 33
+#define ADC_MAX ((1 << ADC_BITS) - 1) /* max adc count */
 
-#define INITIAL_SAMPLES 10000
-#define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
+#define CURRENT_SCALE 1000	/* current scale factor */
+#define VOLT_SCALE 10		/* voltage scale factor */
+
+#define VREF_1000 3300		/* ref voltage times current scale factor */
+#define VREF_10 33		/* rev voltage time volt scale factor */
+
+#define DISPLAY_INTERVAL (12 * 1000) /* buffer display interval */
+#define MEASURE_INTERVAL (60 * 1000) /* measurement interval */
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
 enum chanState {initRms, avgRms, rmsDone};
@@ -51,7 +55,7 @@ typedef struct s_adcData
  };
 } T_ADC_DATA, *P_ADC_DATA;
 
-#define RMS_DATA_SIZE 64
+#define RMS_DATA_SIZE (4 * SAMPLES_CYCLE) /* amount to save for debug */
 
 typedef struct s_rms
 {
@@ -67,21 +71,11 @@ typedef struct s_rms
  uint16_t data[RMS_DATA_SIZE];	/* data buffer */
 } T_RMS, *P_RMS;
 
-#if 0
-typedef struct s_buffer
-{
- int filPtr;			/* fill pointer */
- int empPtr;			/* empty pointer */
- int count;			/* number in buffer */
- T_ADC_DATA buf[PWR_SIZE];	/* buffer */
-} T_BUFFER, *P_BUFFER;
-#endif	/* 0 */
-
 typedef struct s_pwrData
 {
  uint32_t time;			/* time of reading */
- int vSum;			/* voltage sum of squares */
- int cSum;			/* current sum of squares */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
  int64_t pwrSum;		/* sum of voltage times current */
@@ -96,9 +90,6 @@ typedef struct s_pwrBuf
  T_PWR_DATA buf[PWR_SIZE];	/* buffer */
 } T_PWR_BUF, *P_PWR_BUF;
 
-#define DISPLAY_INTERVAL (12 * 1000)
-#define MEASURE_INTERVAL (60 * 1000)
-
 typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
@@ -106,25 +97,31 @@ typedef struct s_rmsPwr
  uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
- int cycleCount;		/* cycle counter */
- T_RMS c;			/* current */
- T_RMS v;			/* voltage */
+ /* scale factors */
  float curScale;		/* adc count to current */
  float voltScale;		/* adc count to voltage */
- double pwrScale;
- int64_t pwrScaleNum;		/* adc count power numerator */
- int pwrScaleDenom;		/* adc count power denominator */
- int samples;			/* sample counter */
- int64_t pwrSum;		/* power sum */
- int sampleCount;		/* sample count for last reading */
- int displayTime;		/* time for last display */
+ double pwrScale;		/* power scaling factor */
+ /* accumulators for interrupt routine */
+ int cycleCount;		/* interrupt cycle counter */
+ int samples;			/* interrupt sample counter */
+ T_RMS c;			/* interrupt current accumulator */
+ T_RMS v;			/* interrupt voltage accumulator */
+ int64_t pwrSum;		/* interrupt power sum */
+ /* values for one minute reporting */
+ int samplesTotal;		/* total Samples */
+ int64_t vSumTotal;		/* vsum total */
+ int64_t cSumTotal;		/* csum total */
+ int64_t pwrSumTotal;		/* pwrsum total */
+ /* one minute calculated values */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
- int realPwrTotal;		/* total real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
  int pwrDir;			/* power direction */
+ /* timing variables */
+ int displayTime;		/* time for last display */
+ int measureTime;		/* time for measurement */
  struct s_chanCfg *cfg;		/* channel configuration */
  T_PWR_BUF pwrBuf;		/* power buffers */
 } T_RMSPWR, *P_RMSPWR;

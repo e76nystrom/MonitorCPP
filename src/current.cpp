@@ -56,14 +56,14 @@ T_RMSCHAN rmsData[MAX_CHAN_RMS];
 T_CHANCFG chanCfg[MAX_CHAN] =
 {
 #if 1
- {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 30, 0.15119,
+ {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 30, 0.15119 * VOLT_SCALE,
   (P_RMSPWR) &rmsPower[0]},
  {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 30, 0,
   (P_RMSPWR) &rmsData[0]},
- {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * 10, 0,
+ {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * VOLT_SCALE, 0,
   (P_RMSPWR) &rmsData[1]},
 #else
- {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * 10, 0,
+ {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * VOLT_SCALE, 0,
   (P_RMSPWR) &rmsData[0]},
 #endif	/* 0 */
 };
@@ -96,23 +96,27 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define EXT extern
 #endif	/* EXT */
 
-#define PWR_SIZE 16
-#define RMS_SIZE 16
-#define INITIAL_COUNT 10000
-#define CYCLE_COUNT 60
+#define PWR_SIZE 16		/* power buffers */
+#define RMS_SIZE 16		/* rms buffers */
+#define INITIAL_SAMPLES 10000	/* initial samples for offset */
+#define CYCLE_COUNT 60		/* cycles saved per buffer */
 #define SAMPLE_SHIFT 8
 
-#define CYCLES_SEC 60
-#define SAMPLES_CYCLE 16
+#define CYCLES_SEC 60		/* line frequency */
+#define SAMPLES_CYCLE 16	/* samples per wave */
 #define CHAN_PAIRS 2
-#define ADC_BITS 12
+#define ADC_BITS 12		/* number of adc bits */
 
-#define ADC_MAX ((1 << ADC_BITS) - 1)
-#define VREF_1000 3300
-#define VREF_10 33
+#define ADC_MAX ((1 << ADC_BITS) - 1) /* max adc count */
 
-#define INITIAL_SAMPLES 10000
-#define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
+#define CURRENT_SCALE 1000	/* current scale factor */
+#define VOLT_SCALE 10		/* voltage scale factor */
+
+#define VREF_1000 3300		/* ref voltage times current scale factor */
+#define VREF_10 33		/* rev voltage time volt scale factor */
+
+#define DISPLAY_INTERVAL (12 * 1000) /* buffer display interval */
+#define MEASURE_INTERVAL (60 * 1000) /* measurement interval */
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
 enum chanState {initRms, avgRms, rmsDone};
@@ -135,7 +139,7 @@ typedef struct s_adcData
  };
 } T_ADC_DATA, *P_ADC_DATA;
 
-#define RMS_DATA_SIZE 64
+#define RMS_DATA_SIZE (4 * SAMPLES_CYCLE) /* amount to save for debug */
 
 typedef struct s_rms
 {
@@ -151,21 +155,11 @@ typedef struct s_rms
  uint16_t data[RMS_DATA_SIZE];	/* data buffer */
 } T_RMS, *P_RMS;
 
-#if 0
-typedef struct s_buffer
-{
- int filPtr;			/* fill pointer */
- int empPtr;			/* empty pointer */
- int count;			/* number in buffer */
- T_ADC_DATA buf[PWR_SIZE];	/* buffer */
-} T_BUFFER, *P_BUFFER;
-#endif	/* 0 */
-
 typedef struct s_pwrData
 {
  uint32_t time;			/* time of reading */
- int vSum;			/* voltage sum of squares */
- int cSum;			/* current sum of squares */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
  int64_t pwrSum;		/* sum of voltage times current */
@@ -180,9 +174,6 @@ typedef struct s_pwrBuf
  T_PWR_DATA buf[PWR_SIZE];	/* buffer */
 } T_PWR_BUF, *P_PWR_BUF;
 
-#define DISPLAY_INTERVAL (12 * 1000)
-#define MEASURE_INTERVAL (60 * 1000)
-
 typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
@@ -190,25 +181,31 @@ typedef struct s_rmsPwr
  uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
- int cycleCount;		/* cycle counter */
- T_RMS c;			/* current */
- T_RMS v;			/* voltage */
+ /* scale factors */
  float curScale;		/* adc count to current */
  float voltScale;		/* adc count to voltage */
- double pwrScale;
- int64_t pwrScaleNum;		/* adc count power numerator */
- int pwrScaleDenom;		/* adc count power denominator */
- int samples;			/* sample counter */
- int64_t pwrSum;		/* power sum */
- int sampleCount;		/* sample count for last reading */
- int displayTime;		/* time for last display */
+ double pwrScale;		/* power scaling factor */
+ /* accumulators for interrupt routine */
+ int cycleCount;		/* interrupt cycle counter */
+ int samples;			/* interrupt sample counter */
+ T_RMS c;			/* interrupt current accumulator */
+ T_RMS v;			/* interrupt voltage accumulator */
+ int64_t pwrSum;		/* interrupt power sum */
+ /* values for one minute reporting */
+ int samplesTotal;		/* total Samples */
+ int64_t vSumTotal;		/* vsum total */
+ int64_t cSumTotal;		/* csum total */
+ int64_t pwrSumTotal;		/* pwrsum total */
+ /* one minute calculated values */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
- int realPwrTotal;		/* total real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
  int pwrDir;			/* power direction */
+ /* timing variables */
+ int displayTime;		/* time for last display */
+ int measureTime;		/* time for measurement */
  struct s_chanCfg *cfg;		/* channel configuration */
  T_PWR_BUF pwrBuf;		/* power buffers */
 } T_RMSPWR, *P_RMSPWR;
@@ -546,9 +543,10 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
    memset((void *) pwr, 0, sizeof(T_RMSPWR));
    pwr->curScale = (VREF_1000 * cfg->curScale) / (float) ADC_MAX;
    pwr->voltScale = (VREF_1000 * cfg->voltScale) / (float) ADC_MAX;
-   pwr->pwrScale = (double) (VREF_1000 * VREF_1000);
-   pwr->pwrScale /= (double) (ADC_MAX * ADC_MAX);
-   pwr->pwrScale *= (double) (cfg->curScale * cfg->voltScale);
+   double pwrScale = (double) (VREF_1000 * VREF_1000);
+   pwrScale /= (double) (ADC_MAX * ADC_MAX);
+   pwrScale *= (double) (cfg->curScale * cfg->voltScale / VOLT_SCALE);
+   pwr->pwrScale = pwrScale;
 //   pwr->pwrScaleNum = (VREF_1000 * VREF_1000 *
 //		       cfg->curScale * cfg->voltScale);
 //   pwr->pwrScaleDenom = ADC_MAX * ADC_MAX;
@@ -610,6 +608,19 @@ uint32_t iSqrt(uint32_t a_nInput)
 
 bool newLineFlag;
 
+#if defined(ARDUINO_ARCH_STM32)
+void checkNewLine(void) {}
+#else
+void checkNewLine(void)
+{
+ if (newLineFlag)
+ {
+  newLineFlag = false;
+  newline();
+ }
+}
+#endif	/* ARDUINO_ARCH_STM32 */
+
 void currentUpdate()
 {
  if (pwrActive)
@@ -666,6 +677,7 @@ void updatePower(P_CHANCFG chan)
  {
   dbg0Set();
   int p = pwr->pwrBuf.empPtr;
+  int ep = p;
   P_PWR_DATA buf = &pwr->pwrBuf.buf[p];
   p += 1;
   if (p >= PWR_SIZE)
@@ -673,16 +685,41 @@ void updatePower(P_CHANCFG chan)
   pwr->pwrBuf.empPtr = p;
 
   int samples = buf->samples;
-  /* voltage in tenths of a volt */
-  pwr->vRms = (int) (iSqrt(buf->vSum / samples) * pwr->voltScale * 10);
-  /* current in milliamps */
-  pwr->cRms = (int) (iSqrt(buf->cSum / samples) * pwr->curScale);
-  /* power in milliamp * volts */
-  pwr->realPwr = (int) (buf->pwrSum * (pwr->pwrScale / samples));
-  pwr->realPwrTotal =+ pwr->realPwr;
-  /* power in milliamp * volts */
-  pwr->aprntPwr = (pwr->vRms * pwr->cRms) / 10;
-  pwr->pwrFactor = (100 * pwr->realPwrTotal) / pwr->aprntPwr;
+
+  pwr->samplesTotal += samples;
+  pwr->vSumTotal += buf->vSum;
+  pwr->cSumTotal += buf->cSum;
+  pwr->pwrSumTotal += buf->pwrSum;
+
+  uint32_t t = millis();
+  if ((t - pwr->displayTime) >= DISPLAY_INTERVAL)
+  {
+   pwr->displayTime += DISPLAY_INTERVAL;
+   checkNewLine();
+
+   /* voltage in tenths of a volt */
+   int vRms = (int) (iSqrt(buf->vSum / samples) * pwr->voltScale);
+   /* current in milliamps */
+   int cRms = (int) (iSqrt(buf->cSum / samples) * pwr->curScale);
+   /* power in milliamp * volts */
+   int realPwr = (int) (buf->pwrSum * pwr->pwrScale) / samples;
+   /* power in milliamp * volts */
+   int aprntPwr = (vRms * cRms) / VOLT_SCALE;
+   int pwrFactor = (100 * realPwr) / aprntPwr;
+
+   printf("pi0 %2d %5u ", ep, (unsigned int) (buf->time - pwr->lastTime));
+   char convBuf[32];
+   printf("samples %4d vSum %12s ",
+	  samples, i64toa(buf->vSum, convBuf));
+   printf("vDelta %4d cSum %12s ",
+	  buf->vDelta, i64toa(buf->cSum, convBuf));
+   printf("cDelta %4d pwrSum %12s\n",
+	  buf->cDelta, i64toa(buf->pwrSum, convBuf));
+
+   printf("pi1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
+	  vRms, cRms, aprntPwr, realPwr, pwrFactor);
+   pwr->lastTime = buf->time;
+  }
 
   __disable_irq();
   pwr->pwrBuf.count -= 1;
@@ -690,26 +727,37 @@ void updatePower(P_CHANCFG chan)
 
   dbg0Clr();
   putDbg('P');
-  uint32_t t = millis();
-  if ((t - pwr->displayTime) >= DISPLAY_INTERVAL)
+
+  if ((t - pwr->measureTime) >= MEASURE_INTERVAL)
   {
-   pwr->displayTime += DISPLAY_INTERVAL;
-   if (newLineFlag)
-   {
-    newLineFlag = false;
-    newline();
-   }
-   printf("p %08x %10u %5u ",
-	  (unsigned int) buf, (unsigned int) buf->time,
-	  (unsigned int) (buf->time - pwr->lastTime));
-   printf("vSum %10d vDelta %4d vRms %5d cSum %10d cDelta %4d cRms %5d\n",
-	  buf->vSum, buf->vDelta, pwr->vRms,
-	  buf->cSum, buf->cDelta, pwr->cRms);
+   t -= pwr->measureTime;
+   pwr->measureTime += MEASURE_INTERVAL;
+   checkNewLine();
+
+   samples = pwr->samplesTotal;
+   /* voltage in tenths of a volt */
+   pwr->vRms = (int) (iSqrt(pwr->vSumTotal / samples) * pwr->voltScale);
+   /* current in milliamps */
+   pwr->cRms = (int) (iSqrt(pwr->cSumTotal / samples) * pwr->curScale);
+   /* power in milliamp * volts */
+   pwr->realPwr = (int) ((pwr->pwrSumTotal * pwr->pwrScale) / samples);
+   /* power in milliamp * volts */
+   pwr->aprntPwr = (pwr->vRms * pwr->cRms) / VOLT_SCALE;
+   pwr->pwrFactor = (100 * pwr->realPwr) / pwr->aprntPwr;
+
    char convBuf[32];
-   printf("p samples %4d pwrSum %12s, realPwr %6d aprntPwr %6d pwrFactor %4d\n",
-	  samples, i64toa(buf->pwrSum, convBuf), pwr->realPwrTotal,
-	  pwr->aprntPwr, pwr->pwrFactor);
-   pwr->lastTime = buf->time;
+   printf("pm0 %5u samples %4d vSum %12s ",
+	  (unsigned int) t, samples, i64toa(pwr->vSumTotal, convBuf));
+   printf("cSum %12s ", i64toa(pwr->cSumTotal, convBuf));
+   printf("pwrSum %12s\n", i64toa(pwr->pwrSumTotal, convBuf));
+
+   printf("pm1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
+	  pwr->vRms, pwr->cRms, pwr->aprntPwr, pwr->realPwr, pwr->pwrFactor);
+
+   pwr->samplesTotal = 0;
+   pwr->vSumTotal = 0;
+   pwr->cSumTotal = 0;
+   pwr->pwrSumTotal = 0;
   }
  }
 }
@@ -721,6 +769,7 @@ void updateRms(P_CHANCFG chan)
  {
   dbg0Set();
   int p = rms->chanBuf.empPtr;
+  int ep = p;
   P_CHAN_DATA buf = &rms->chanBuf.buf[p];
   p += 1;
   if (p >= RMS_SIZE)
@@ -744,17 +793,11 @@ void updateRms(P_CHANCFG chan)
   {
    rms->displayTime += DISPLAY_INTERVAL;
    int offset = buf->offset >> SAMPLE_SHIFT;
-#if !defined(ARDUINO_ARCH_STM32)
-   if (newLineFlag)
-   {
-    newLineFlag = false;
-    newline();
-   }
-#endif	/* ARDUINO_ARCH_STM32 */
+   checkNewLine();
    char convBuf[32];
-   printf("%c %08x %10u %5u ",
-	  rms->label, (unsigned int) buf, (unsigned int) buf->time,
-	  (unsigned int) (buf->time - rms->lastTime));
+   printf("%c0 %2d %5u ",
+
+	  rms->label, ep, (unsigned int) (buf->time - rms->lastTime));
    printf("sample %3d min %4d %4d max %4d %4d delta %4d "
 	  "offset %4d sum %10s rms %4d %4d\n",
 	  samples, buf->min, offset - buf->min, buf->max,
@@ -768,30 +811,23 @@ void updateRms(P_CHANCFG chan)
   {
    rms->measureTime += MEASURE_INTERVAL;
    rms->minuteRms = iSqrt(int(rms->rmsSum / rms->rmsSamples));
-#if !defined(ARDUINO_ARCH_STM32)
-   if (newLineFlag)
-   {
-    newLineFlag = false;
-    newline();
-   }
-#endif	/* ARDUINO_ARCH_STM32 */
+   checkNewLine();
    char convBuf[32];
-   printf("%c minute rms count %d samples %5d sum %10s ",
+   int mRms = scaleAdc(rms->minuteRms, chan->rmsScale);
+   printf("%c1 minute rms count %d samples %5d sum %10s rms %5d %5d ",
 	  rms->label, rms->minuteCount, rms->rmsSamples,
-	  i64toa(rms->rmsSum, convBuf));
+	  i64toa(rms->rmsSum, convBuf), rms->minuteRms, mRms);
    if (rms->label == 'c')
    {
-    int mRms = scaleAdc(rms->minuteRms, chan->rmsScale);
-    int val = mRms / 1000;
-    int mval = mRms - (val * 1000);
-    printf("rms %4d %4d %2d.%03d\n", rms->minuteRms, mRms, val, mval);
+    int val = mRms / CURRENT_SCALE;
+    int mval = mRms - (val * CURRENT_SCALE);
+    printf("%2d.%03d\n", val, mval);
    }
    else
    {
-    int Rms = scaleAdc(rms->minuteRms, chan->rmsScale);
-    int val = Rms / 10;
-    int mval = Rms - (val * 10);
-    printf("rms %4d %4d %3d.%01d\n", rms->minuteRms, Rms, val, mval);
+    int val = mRms / VOLT_SCALE;
+    int mval = mRms - (val * VOLT_SCALE);
+    printf("%3d.%01d\n", val, mval);
    }
    rms->minuteCount = 0;
    rms->rmsSamples = 0;
@@ -1340,11 +1376,13 @@ extern "C" void DMA1_Channel1_IRQHandler(void)
 #define SINGLE 1
 
 #if defined(STM32F1)
-extern "C" void TIM1_UP_IRQHandler(void)
+#define timerIRQ TIM1_UP_IRQHandler
 #endif	/* STM32F1 */
 #if defined(STM32F3)
-extern "C" void TIM1_UP_TIM16_IRQHandler(void)
+#define timerIRQ TIM1_UP_TIM16_IRQHandler
 #endif	/* STM32F3 */
+
+extern "C" void timerIRQ(void)
 {
  adcTmrClrIF();
  timUpInts += 1;
@@ -1373,11 +1411,20 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
    switch (pwr->state)
    {
    case initAvg:		/* sample to get zero offset */
-    if (pwr->samples >= INITIAL_COUNT)
+    if (pwr->samples >= INITIAL_SAMPLES)
     {
+     uint32_t t = millis();
+     pwr->displayTime = t;
+     pwr->measureTime = t;
+
      pwr->samples = 0;
-     pwr->state = waitZero;
+     pwr->samplesTotal = 0;
+     pwr->vSumTotal = 0;
+     pwr->cSumTotal = 0;
+     pwr->pwrSumTotal = 0;
+
      pwr->lastBelow = false;
+     pwr->state = waitZero;
     }
     break;
 
@@ -1471,7 +1518,7 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
    switch (rms->state)
    {
    case initRms:
-    if (rms->samples >= INITIAL_COUNT)
+    if (rms->samples >= INITIAL_SAMPLES)
     {
      rms->state = avgRms;
      rms->samples = 0;
