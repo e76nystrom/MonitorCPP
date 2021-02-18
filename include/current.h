@@ -12,8 +12,8 @@
 #define EXT extern
 #endif	/* EXT */
 
-#define PWR_SIZE 32
-#define RMS_SIZE 32
+#define PWR_SIZE 16
+#define RMS_SIZE 16
 #define INITIAL_COUNT 10000
 #define CYCLE_COUNT 60
 #define SAMPLE_SHIFT 8
@@ -25,7 +25,7 @@
 
 #define ADC_MAX ((1 << ADC_BITS) - 1)
 #define VREF_1000 3300
-inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
+#define VREF_10 33
 
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
@@ -51,14 +51,20 @@ typedef struct s_adcData
  };
 } T_ADC_DATA, *P_ADC_DATA;
 
+#define RMS_DATA_SIZE 64
+
 typedef struct s_rms
 {
  int sample;			/* current sample */
  int value;			/* value after offset operation */
  int offset;			/* filtered offset */
- uint64_t sum;			/* sum of squares */
- int min;
- int max;
+ int64_t sum;			/* sum of squares */
+ int min;			/* min value */
+ int max;			/* max value */
+ bool save;			/* save data */
+ int count;			/* data count */
+ uint16_t *dataP;		/* data pointer */
+ uint16_t data[RMS_DATA_SIZE];	/* data buffer */
 } T_RMS, *P_RMS;
 
 #if 0
@@ -76,7 +82,9 @@ typedef struct s_pwrData
  uint32_t time;			/* time of reading */
  int vSum;			/* voltage sum of squares */
  int cSum;			/* current sum of squares */
- int pwrSum;			/* sum of voltage time current */
+ int vDelta;			/* voltage adc delta value */
+ int cDelta;			/* current adc delta value */
+ int64_t pwrSum;		/* sum of voltage times current */
  int samples;			/* samples */
 } T_PWR_DATA, *P_PWR_DATA;
 
@@ -95,29 +103,33 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
  int cycleCount;		/* cycle counter */
- T_RMS v;			/* voltage */
  T_RMS c;			/* current */
+ T_RMS v;			/* voltage */
+ float curScale;		/* adc count to current */
+ float voltScale;		/* adc count to voltage */
+ double pwrScale;
+ int64_t pwrScaleNum;		/* adc count power numerator */
+ int pwrScaleDenom;		/* adc count power denominator */
  int samples;			/* sample counter */
- int pwrSum;			/* power sum */
+ int64_t pwrSum;		/* power sum */
  int sampleCount;		/* sample count for last reading */
  int displayTime;		/* time for last display */
- int pwrAccum;			/* accumulator for power */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
+ int realPwrTotal;		/* total real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
  int pwrDir;			/* power direction */
- bool update;			/* time to update */
- bool done;			/* update done */
  struct s_chanCfg *cfg;		/* channel configuration */
- T_PWR_BUF pwrBuf;
+ T_PWR_BUF pwrBuf;		/* power buffers */
 } T_RMSPWR, *P_RMSPWR;
 
-typedef struct s_curData
+typedef struct s_chanData
 {
  uint32_t time;			/* time of reading */
  int samples;			/* samples */
@@ -127,7 +139,7 @@ typedef struct s_curData
  int max;
 } T_CHAN_DATA, *P_CHAN_DATA;
 
-typedef struct s_curBuf
+typedef struct s_chanBuf
 {
  int filPtr;			/* fill pointer */
  int empPtr;			/* empty pointer */
@@ -139,13 +151,14 @@ typedef struct s_rmsChan
 {
  chanState state;		/* curent measurement state */
  chanState lastState;		/* last curent measurement state */
+ uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  ADC_TypeDef *adc;		/* pointer to adc hardware */
  P_RMS *adcRms;			/* pointer to isr pointer */
- T_RMS rmsAccum;			/* current */
+ T_RMS rmsAccum;		/* rms accumulator */
  int samples;			/* sample counter */
  int rms;			/* rms current */
- uint64_t rmsSum;		/* sum for rms calculation */
+ int64_t rmsSum;		/* sum for rms calculation */
  int measureTime;		/* time of last measurement */
  int rmsSamples;		/* samples for rms calculation */
  int minuteRms;			/* rms value for one minute */
@@ -194,10 +207,16 @@ EXT T_CHANCFG chanCfg[MAX_CHAN];
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
 
+inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
+
+inline int scaleAdc(int val, float scale)
+{
+ return((int) (scale * ((val * VREF_1000) / ADC_MAX)));
+}
+
 void rmsTestInit(void);
 void rmsTest(void);
 
-//void rmsCfgInit(void);
 void rmsCfgInit(P_CHANCFG cfg, int count);
 
 void currentUpdate();

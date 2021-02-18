@@ -101,12 +101,12 @@ void monitorLoopSetup(void)
 
 #define LED_DELAY 500
 
-#define PWR_INTERVAL (500)
+//#define PWR_INTERVAL (500)
 
 int16_t monitorLoop(void)
 {
  uint32_t ledUpdTime;
- uint32_t pwrUpdTime;
+// uint32_t pwrUpdTime;
  unsigned char ch;
  uint32_t extInt[] =
  {
@@ -256,7 +256,7 @@ int16_t monitorLoop(void)
  #endif	 /* HAL */
 
  rmsCfgInit(&chanCfg[0], MAX_CHAN); /* init cfg */
- pwrUpdTime = millis() - PWR_INTERVAL;
+// pwrUpdTime = millis() - PWR_INTERVAL;
 
  ledUpdTime = millis();
  ledSet();
@@ -281,6 +281,7 @@ int16_t monitorLoop(void)
 
    if (pwrActive)
    {
+#if 0
     if ((t - pwrUpdTime) >= PWR_INTERVAL)
     {
      pwrUpdTime = t;
@@ -302,6 +303,9 @@ int16_t monitorLoop(void)
       updateRms(chan);
      }
     }
+#else
+    currentUpdate();
+#endif  /* 0 */
    }
 
    pollBufChar();		/* check for data to output */

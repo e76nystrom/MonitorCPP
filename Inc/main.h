@@ -90,6 +90,8 @@ void Error_Handler(void);
 #define SPI_SEL_GPIO_Port GPIOB
 #define Sel_Pin GPIO_PIN_8
 #define Sel_GPIO_Port GPIOA
+#define Dbg5_Pin GPIO_PIN_15
+#define Dbg5_GPIO_Port GPIOA
 #define Dbg0_Pin GPIO_PIN_4
 #define Dbg0_GPIO_Port GPIOB
 #define Dbg1_Pin GPIO_PIN_5

@@ -1,4 +1,4 @@
-//******************************************************************************
+/******************************************************************************/
 #define __CURRENT__
 #if defined(STM32F1)
 #include "stm32f1xx_hal.h"
@@ -56,9 +56,9 @@ T_RMSCHAN rmsData[MAX_CHAN_RMS];
 T_CHANCFG chanCfg[MAX_CHAN] =
 {
 #if 1
- {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 20, 0.15119 * 10,
+ {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 30, 0.15119,
   (P_RMSPWR) &rmsPower[0]},
- {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 20, 0,
+ {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 30, 0,
   (P_RMSPWR) &rmsData[0]},
  {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * 10, 0,
   (P_RMSPWR) &rmsData[1]},
@@ -96,8 +96,8 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define EXT extern
 #endif	/* EXT */
 
-#define PWR_SIZE 32
-#define RMS_SIZE 32
+#define PWR_SIZE 16
+#define RMS_SIZE 16
 #define INITIAL_COUNT 10000
 #define CYCLE_COUNT 60
 #define SAMPLE_SHIFT 8
@@ -109,7 +109,7 @@ extern DMA_HandleTypeDef hdma_adc1;
 
 #define ADC_MAX ((1 << ADC_BITS) - 1)
 #define VREF_1000 3300
-inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
+#define VREF_10 33
 
 #define INITIAL_SAMPLES 10000
 #define RMS_INITIAL int(INITIAL_SAMPLES / SAMPLES_CYCLE) * SAMPLES_CYCLE
@@ -135,14 +135,20 @@ typedef struct s_adcData
  };
 } T_ADC_DATA, *P_ADC_DATA;
 
+#define RMS_DATA_SIZE 64
+
 typedef struct s_rms
 {
  int sample;			/* current sample */
  int value;			/* value after offset operation */
  int offset;			/* filtered offset */
- uint64_t sum;			/* sum of squares */
- int min;
- int max;
+ int64_t sum;			/* sum of squares */
+ int min;			/* min value */
+ int max;			/* max value */
+ bool save;			/* save data */
+ int count;			/* data count */
+ uint16_t *dataP;		/* data pointer */
+ uint16_t data[RMS_DATA_SIZE];	/* data buffer */
 } T_RMS, *P_RMS;
 
 #if 0
@@ -160,7 +166,9 @@ typedef struct s_pwrData
  uint32_t time;			/* time of reading */
  int vSum;			/* voltage sum of squares */
  int cSum;			/* current sum of squares */
- int pwrSum;			/* sum of voltage time current */
+ int vDelta;			/* voltage adc delta value */
+ int cDelta;			/* current adc delta value */
+ int64_t pwrSum;		/* sum of voltage times current */
  int samples;			/* samples */
 } T_PWR_DATA, *P_PWR_DATA;
 
@@ -179,29 +187,33 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
  int cycleCount;		/* cycle counter */
- T_RMS v;			/* voltage */
  T_RMS c;			/* current */
+ T_RMS v;			/* voltage */
+ float curScale;		/* adc count to current */
+ float voltScale;		/* adc count to voltage */
+ double pwrScale;
+ int64_t pwrScaleNum;		/* adc count power numerator */
+ int pwrScaleDenom;		/* adc count power denominator */
  int samples;			/* sample counter */
- int pwrSum;			/* power sum */
+ int64_t pwrSum;		/* power sum */
  int sampleCount;		/* sample count for last reading */
  int displayTime;		/* time for last display */
- int pwrAccum;			/* accumulator for power */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
+ int realPwrTotal;		/* total real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
  int pwrDir;			/* power direction */
- bool update;			/* time to update */
- bool done;			/* update done */
  struct s_chanCfg *cfg;		/* channel configuration */
- T_PWR_BUF pwrBuf;
+ T_PWR_BUF pwrBuf;		/* power buffers */
 } T_RMSPWR, *P_RMSPWR;
 
-typedef struct s_curData
+typedef struct s_chanData
 {
  uint32_t time;			/* time of reading */
  int samples;			/* samples */
@@ -211,7 +223,7 @@ typedef struct s_curData
  int max;
 } T_CHAN_DATA, *P_CHAN_DATA;
 
-typedef struct s_curBuf
+typedef struct s_chanBuf
 {
  int filPtr;			/* fill pointer */
  int empPtr;			/* empty pointer */
@@ -223,13 +235,14 @@ typedef struct s_rmsChan
 {
  chanState state;		/* curent measurement state */
  chanState lastState;		/* last curent measurement state */
+ uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  ADC_TypeDef *adc;		/* pointer to adc hardware */
  P_RMS *adcRms;			/* pointer to isr pointer */
- T_RMS rmsAccum;			/* current */
+ T_RMS rmsAccum;		/* rms accumulator */
  int samples;			/* sample counter */
  int rms;			/* rms current */
- uint64_t rmsSum;		/* sum for rms calculation */
+ int64_t rmsSum;		/* sum for rms calculation */
  int measureTime;		/* time of last measurement */
  int rmsSamples;		/* samples for rms calculation */
  int minuteRms;			/* rms value for one minute */
@@ -278,10 +291,16 @@ EXT T_CHANCFG chanCfg[MAX_CHAN];
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
 
+inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
+
+inline int scaleAdc(int val, float scale)
+{
+ return((int) (scale * ((val * VREF_1000) / ADC_MAX)));
+}
+
 void rmsTestInit(void);
 void rmsTest(void);
 
-//void rmsCfgInit(void);
 void rmsCfgInit(P_CHANCFG cfg, int count);
 
 void currentUpdate();
@@ -424,7 +443,8 @@ bool updChannel;
 //#define putDbg(ch) DBGPORT.write(ch);
 #define putDbg(ch)
 #else  /* ARDUINO_ARCH_STM32 */
-#define putDbg(ch) putx(ch)
+//#define putDbg(ch) putBufChar(ch)
+#define putDbg(ch)
 #endif /* ARDUINO_ARCH_STM32 */
 
 #if defined(STM32F1)
@@ -497,43 +517,6 @@ void rmsTest(void)
 #endif
 }
 
-#if 0
-void rmsCfgInit(void)
-{
- maxChan = 2;			/* maximum channel */
- curChan = 0;			/* current channel */
-
- P_CHANCFG cfg = &chanCfg[0];
- memset((void *) cfg, 0, sizeof(chanCfg));
-
- P_RMSPWR pwr = &rmsPower[0];
- memset((void *) pwr, 0, sizeof(rmsPower));
-
- cfg->type = POWER_CHAN;
- cfg->curScale = 20.0;
- cfg->voltScale = 1.0;
- pwr->cfg = cfg;
- pwr->state = initAvg;
- pwr->lastState = initAvg;
- cfg->pwr = pwr;
- cfg->voltAdc.chan = ADC1_0;
- cfg->rmsAdc.chan = ADC2_0;
-
- cfg++;
-
- P_RMSCUR cur = &rmsCurrent[0];
- memset((void *) cur, 0, sizeof(rmsCurrent));
- 
- cfg->type = CURRENT_CHAN;
- cfg->curScale = 20.0;
- cur->cfg = cfg;
- cur->state = initCur;
- cur->lastState = initCur;
- cfg->cur = cur;
- cfg->rmsAdc.chan = ADC1_1;
-}
-#endif
-
 void adcChanInit(T_ADCCHAN adc)
 {
  printf("adcChanInit adc %08x chan %08x\n",
@@ -561,6 +544,14 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
    adcChanInit(cfg->voltAdc);
    P_RMSPWR pwr = cfg->pwr;
    memset((void *) pwr, 0, sizeof(T_RMSPWR));
+   pwr->curScale = (VREF_1000 * cfg->curScale) / (float) ADC_MAX;
+   pwr->voltScale = (VREF_1000 * cfg->voltScale) / (float) ADC_MAX;
+   pwr->pwrScale = (double) (VREF_1000 * VREF_1000);
+   pwr->pwrScale /= (double) (ADC_MAX * ADC_MAX);
+   pwr->pwrScale *= (double) (cfg->curScale * cfg->voltScale);
+//   pwr->pwrScaleNum = (VREF_1000 * VREF_1000 *
+//		       cfg->curScale * cfg->voltScale);
+//   pwr->pwrScaleDenom = ADC_MAX * ADC_MAX;
    pwr->state = initAvg;
    pwr->lastState = initAvg;
    pwr->label = cfg->label;
@@ -617,10 +608,13 @@ uint32_t iSqrt(uint32_t a_nInput)
  return(res);
 }
 
+bool newLineFlag;
+
 void currentUpdate()
 {
  if (pwrActive)
  {
+  newLineFlag = true;
   for (int i = 0; i < maxChan; i++)
   {
    P_CHANCFG chan = &chanCfg[i];
@@ -636,11 +630,17 @@ void currentUpdate()
  }
 }
 
-char *i64toa(uint32_t val, char *buf)
+char *i64toa(int64_t val, char *buf)
 {
  char tmp[32];
  int count = 0;
  char *p = tmp;
+ char *p1 = buf;
+ if (val < 0)
+ {
+  *p1++ = '-';
+  val = -val;
+ }
  while (val != 0)
  {
   int dig = (int) (val % 10);
@@ -648,7 +648,6 @@ char *i64toa(uint32_t val, char *buf)
   count += 1;
   val /= 10;
  }
- char *p1 = buf;
  if (count == 0)
   *p1++ = '0';
  else
@@ -672,27 +671,45 @@ void updatePower(P_CHANCFG chan)
   if (p >= PWR_SIZE)
    p = 0;
   pwr->pwrBuf.empPtr = p;
+
   int samples = buf->samples;
-  pwr->vRms = iSqrt(buf->vSum / samples);
-  pwr->cRms = iSqrt(buf->cSum / samples);
-  pwr->realPwr = buf->pwrSum / samples;
-  pwr->pwrAccum =+ pwr->realPwr;
-  pwr->aprntPwr = pwr->vRms * pwr->cRms;
-  pwr->pwrFactor = (100 * pwr->realPwr) / pwr->aprntPwr;
+  /* voltage in tenths of a volt */
+  pwr->vRms = (int) (iSqrt(buf->vSum / samples) * pwr->voltScale * 10);
+  /* current in milliamps */
+  pwr->cRms = (int) (iSqrt(buf->cSum / samples) * pwr->curScale);
+  /* power in milliamp * volts */
+  pwr->realPwr = (int) (buf->pwrSum * (pwr->pwrScale / samples));
+  pwr->realPwrTotal =+ pwr->realPwr;
+  /* power in milliamp * volts */
+  pwr->aprntPwr = (pwr->vRms * pwr->cRms) / 10;
+  pwr->pwrFactor = (100 * pwr->realPwrTotal) / pwr->aprntPwr;
+
   __disable_irq();
   pwr->pwrBuf.count -= 1;
   __enable_irq();
+
   dbg0Clr();
   putDbg('P');
   uint32_t t = millis();
   if ((t - pwr->displayTime) >= DISPLAY_INTERVAL)
   {
    pwr->displayTime += DISPLAY_INTERVAL;
-   newline();
-   printf("p sample %d vSum %d vRms %d cSum %d cRms %d\n"
-	  "p pwrSum %d, realPwr %d aprntPwr %d pwrFactor %d\n",
-	  samples, buf->vSum, pwr->vRms, buf->cSum, pwr->cRms,
-	  buf->pwrSum, pwr->realPwr, pwr->aprntPwr, pwr->pwrFactor);
+   if (newLineFlag)
+   {
+    newLineFlag = false;
+    newline();
+   }
+   printf("p %08x %10u %5u ",
+	  (unsigned int) buf, (unsigned int) buf->time,
+	  (unsigned int) (buf->time - pwr->lastTime));
+   printf("vSum %10d vDelta %4d vRms %5d cSum %10d cDelta %4d cRms %5d\n",
+	  buf->vSum, buf->vDelta, pwr->vRms,
+	  buf->cSum, buf->cDelta, pwr->cRms);
+   char convBuf[32];
+   printf("p samples %4d pwrSum %12s, realPwr %6d aprntPwr %6d pwrFactor %4d\n",
+	  samples, i64toa(buf->pwrSum, convBuf), pwr->realPwrTotal,
+	  pwr->aprntPwr, pwr->pwrFactor);
+   pwr->lastTime = buf->time;
   }
  }
 }
@@ -723,31 +740,58 @@ void updateRms(P_CHANCFG chan)
   putDbg('*');
 
   uint32_t t = millis();
+  if ((t - rms->displayTime) >= DISPLAY_INTERVAL)
+  {
+   rms->displayTime += DISPLAY_INTERVAL;
+   int offset = buf->offset >> SAMPLE_SHIFT;
+#if !defined(ARDUINO_ARCH_STM32)
+   if (newLineFlag)
+   {
+    newLineFlag = false;
+    newline();
+   }
+#endif	/* ARDUINO_ARCH_STM32 */
+   char convBuf[32];
+   printf("%c %08x %10u %5u ",
+	  rms->label, (unsigned int) buf, (unsigned int) buf->time,
+	  (unsigned int) (buf->time - rms->lastTime));
+   printf("sample %3d min %4d %4d max %4d %4d delta %4d "
+	  "offset %4d sum %10s rms %4d %4d\n",
+	  samples, buf->min, offset - buf->min, buf->max,
+	  buf->max - offset, scaleAdc(buf->max - buf->min), offset,
+	  i64toa(buf->sum, convBuf), rms->rms,
+	  scaleAdc(rms->rms, chan->rmsScale));
+   rms->lastTime = buf->time;
+  } /* DISPLAY_INTERVAL */
+
   if ((t - rms->measureTime) >= MEASURE_INTERVAL)
   {
-   char convBuf[32];
    rms->measureTime += MEASURE_INTERVAL;
    rms->minuteRms = iSqrt(int(rms->rmsSum / rms->rmsSamples));
 #if !defined(ARDUINO_ARCH_STM32)
-   newline();
+   if (newLineFlag)
+   {
+    newLineFlag = false;
+    newline();
+   }
 #endif	/* ARDUINO_ARCH_STM32 */
+   char convBuf[32];
+   printf("%c minute rms count %d samples %5d sum %10s ",
+	  rms->label, rms->minuteCount, rms->rmsSamples,
+	  i64toa(rms->rmsSum, convBuf));
    if (rms->label == 'c')
    {
-    int mRms = (int) (scaleAdc(rms->minuteRms) * chan->rmsScale);
+    int mRms = scaleAdc(rms->minuteRms, chan->rmsScale);
     int val = mRms / 1000;
     int mval = mRms - (val * 1000);
-    printf("c minute rms count %d samples %5d sum %10s rms %4d %4d %2d.%03d\n",
-	   rms->minuteCount, rms->rmsSamples,
-	   i64toa(rms->rmsSum, convBuf), rms->minuteRms, mRms, val, mval);
+    printf("rms %4d %4d %2d.%03d\n", rms->minuteRms, mRms, val, mval);
    }
    else
    {
-    int Rms = (int) ((scaleAdc(rms->minuteRms)) * chan->rmsScale);
+    int Rms = scaleAdc(rms->minuteRms, chan->rmsScale);
     int val = Rms / 10;
     int mval = Rms - (val * 10);
-    printf("v minute rms count %d samples %5d sum %10s rms %4d %4d %3d.%01d\n",
-	   rms->minuteCount, rms->rmsSamples,
-	   i64toa(rms->rmsSum, convBuf), rms->minuteRms, Rms, val, mval);
+    printf("rms %4d %4d %3d.%01d\n", rms->minuteRms, Rms, val, mval);
    }
    rms->minuteCount = 0;
    rms->rmsSamples = 0;
@@ -762,22 +806,7 @@ void updateRms(P_CHANCFG chan)
    emonData(buf);
 #endif	/* WIFI_ENA */
 #endif	/* ARDUINO_ARCH_STM32 */
-  }
-  
-  if ((t - rms->displayTime) >= DISPLAY_INTERVAL)
-  {
-   char convBuf[32];
-   rms->displayTime += DISPLAY_INTERVAL;
-   int offset = buf->offset >> SAMPLE_SHIFT;
-#if !defined(ARDUINO_ARCH_STM32)
-   newline();
-#endif	/* ARDUINO_ARCH_STM32 */
-   printf("%c sample %3d min %4d %4d max %4d %4d delta %4d "
-	  "offset %4d sum %10s rms %4d %4d\n",
-	  rms->label, samples, buf->min, offset - buf->min, buf->max,
-	  buf->max - offset, scaleAdc(buf->max - buf->min), offset,
-	  i64toa(buf->sum, convBuf), rms->rms, scaleAdc(rms->rms));
-  }
+  } /* MEASURE_INTEVAL */
  }
 }
 
@@ -1335,17 +1364,18 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
    
   if (chan->type == POWER_CHAN)
   {
-   LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, chan->voltAdc.chan);
-   LL_ADC_REG_SetSequencerRanks(ADC2, LL_ADC_REG_RANK_1, chan->rmsAdc.chan);
+   LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, chan->rmsAdc.chan);
+   LL_ADC_REG_SetSequencerRanks(ADC2, LL_ADC_REG_RANK_1, chan->voltAdc.chan);
    P_RMSPWR pwr = chan->pwr;
-   adc1Rms = &pwr->v;
-   adc2Rms = &pwr->c;
+   adc1Rms = &pwr->c;
+   adc2Rms = &pwr->v;
    pwr->samples += 1;
    switch (pwr->state)
    {
    case initAvg:		/* sample to get zero offset */
     if (pwr->samples >= INITIAL_COUNT)
     {
+     pwr->samples = 0;
      pwr->state = waitZero;
      pwr->lastBelow = false;
     }
@@ -1357,7 +1387,11 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
      if (pwr->lastBelow)
      {
       pwr->v.sum = 0;
+      pwr->v.max = 0;
+      pwr->v.min = ADC_MAX;
       pwr->c.sum = 0;
+      pwr->c.max = 0;
+      pwr->c.min = ADC_MAX;
       pwr->pwrSum = 0;
       pwr->samples = 0;
       pwr->state = avgData;
@@ -1388,16 +1422,24 @@ extern "C" void TIM1_UP_TIM16_IRQHandler(void)
 	if (ptr >= PWR_SIZE)
 	 ptr = 0;
 	pwr->pwrBuf.filPtr = ptr;
+
 	pwrData->time = millis();
 	pwrData->samples = samples;
 	pwrData->vSum = pwr->v.sum;
+	pwrData->vDelta = pwr->v.max - pwr->v.min;
 	pwrData->cSum = pwr->c.sum;
+	pwrData->cDelta = pwr->c.max - pwr->c.min;
 	pwrData->pwrSum = pwr->pwrSum;
+
 	pwr->pwrBuf.count += 1;
 	putDbg('p');
        }
        pwr->v.sum = 0;
+       pwr->v.max = 0;
+       pwr->v.min = ADC_MAX;
        pwr->c.sum = 0;
+       pwr->c.max = 0;
+       pwr->c.min = ADC_MAX;
        pwr->pwrSum = 0;
        pwr->samples = 0;
        pwr->cycleCount = CYCLE_COUNT;
@@ -1526,6 +1568,19 @@ inline void saveData(int sample)
  }
 }
 
+void saveRmsData(P_RMS rms, uint16_t sample)
+{
+ if (rms->save)
+ {
+  if (--rms->count < 0)
+  {
+   rms->count = RMS_DATA_SIZE;
+   rms->dataP = rms->data;
+  }
+  *rms->dataP++ = sample;
+ }
+}
+
 extern "C" void ADC1_2_IRQHandler(void)
 {
  if (adcIntFlag(ADC1))		/* if adc1 interrupt active */
@@ -1535,27 +1590,29 @@ extern "C" void ADC1_2_IRQHandler(void)
 
   if (pwrActive)		/* if measuring power */
   {
-   P_RMS rms = adc1Rms;
-   int sample = ADC1->DR;
+   P_RMS rms = adc1Rms;		/* get pointer to channel data */
+   int sample = ADC1->DR;	/* read adc */
 
    if (adcTest)
-    sample = adcData.voltage;
+    sample = adcData.current;
 
-   if (sample > rms->max)
+   saveRmsData(rms, sample);
+
+   if (sample > rms->max)	/* set max and min */
     rms->max = sample;
    if (sample < rms->min)
     rms->min = sample;
 
-   rms->sample = sample;
-   sample <<= SAMPLE_SHIFT;
+   sample <<= SAMPLE_SHIFT;	/* scale sample */
+   rms->sample = sample;	/* save scaled sample */
 
-   int offset = rms->offset;
-   offset = offset + ((sample - offset) >> 10);
-   rms->offset = offset;
-   sample -= offset;
-   sample >>= SAMPLE_SHIFT;
-   rms->value = sample;
-   rms->sum += sample * sample;
+   int offset = rms->offset;	/* get offset in local variable */
+   offset = offset + ((sample - offset) >> 10); /* update offset */
+   rms->offset = offset;	/* update offset */
+   sample -= offset;		/* offset sample */
+   sample >>= SAMPLE_SHIFT;	/* remove scale factor */
+   rms->value = sample;		/* save sample value */
+   rms->sum += sample * sample;	/* update squared sum */
   }
   else				/* if test mode */
   {
@@ -1585,18 +1642,18 @@ extern "C" void ADC1_2_IRQHandler(void)
    P_RMS rms = adc2Rms;
    int sample = ADC2->DR;
 
-   saveData(sample);
+   saveRmsData(rms, sample);
 
    if (adcTest)
-    sample = adcData.current;
+    sample = adcData.voltage;
 
    if (sample > rms->max)
     rms->max = sample;
    if (sample < rms->min)
     rms->min = sample;
 
-   rms->sample = sample;
    sample <<= SAMPLE_SHIFT;
+   rms->sample = sample;
 
    int offset = rms->offset;
    offset = offset + ((sample - offset) >> 10);
@@ -1626,6 +1683,34 @@ extern "C" void ADC1_2_IRQHandler(void)
 }
 
 #if !defined(ARDUINO_ARCH_STM32)
+
+void printRmsBuf(P_RMS rms)
+{
+ int count = RMS_DATA_SIZE;
+ uint16_t *p = rms->data;
+
+ int col = 0;
+ while (1)
+ {
+  uint16_t val = *p++;
+  printf("%4d ", (int) val);
+  count -= 1;
+  col++;
+  if (col == 8)
+  {
+   col = 0;
+   printf("\n");
+   flushBuf();
+  }
+  if (count == 0)
+  {
+   if (col != 0)
+    printf("\n");
+   break;
+  }
+ }
+}
+
 void currentCmds(void)
 {
  while (1)
@@ -1673,6 +1758,81 @@ void currentCmds(void)
    newline();
    rmsTestInit();
    rmsTest();
+  }
+  else if (ch == 'S')
+  {
+   P_CHANCFG cfg = chanCfg;
+   for (int i = 0; i < MAX_CHAN; i++)
+   {
+    switch(cfg->type)
+    {
+    case POWER_CHAN:
+    {
+     P_RMSPWR pwr = cfg->pwr;
+     pwr->c.save = true;
+     pwr->v.save = true;
+    }
+    break;
+
+    case RMS_CHAN:
+    {
+     P_RMSCHAN rms = cfg->rms;
+     rms->rmsAccum.save = true;
+    }
+    break;
+    }
+    cfg++;
+   }
+  }
+  else if (ch == 'P')
+  {
+   P_CHANCFG cfg = chanCfg;
+   for (int i = 0; i < MAX_CHAN; i++)
+   {
+    switch(cfg->type)
+    {
+    case POWER_CHAN:
+    {
+     P_RMSPWR pwr = cfg->pwr;
+     pwr->c.save = false;
+     pwr->v.save = false;
+    }
+    break;
+
+    case RMS_CHAN:
+    {
+     P_RMSCHAN rms = cfg->rms;
+     rms->rmsAccum.save = false;
+    }
+    break;
+    }
+    cfg++;
+   }
+   cfg = chanCfg;
+   for (int i = 0; i < MAX_CHAN; i++)
+   {
+    switch(cfg->type)
+    {
+    case POWER_CHAN:
+    {
+     P_RMSPWR pwr = cfg->pwr;
+     printf("pwr c\n");
+     printRmsBuf(&pwr->c);
+     printf("pwr v\n");
+     printRmsBuf(&pwr->v);
+    }
+    break;
+
+    case RMS_CHAN:
+    {
+     P_RMSCHAN rms = cfg->rms;
+     printf("rms %c\n", rms->label);
+     printRmsBuf(&rms->rmsAccum);
+    }
+    break;
+    }
+    cfg++;
+   }
   }
 #if 0
   else if (ch == 'd')
