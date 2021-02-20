@@ -99,10 +99,11 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define PWR_SIZE 16		/* power buffers */
 #define RMS_SIZE 16		/* rms buffers */
 #define INITIAL_SAMPLES 10000	/* initial samples for offset */
-#define CYCLE_COUNT 60		/* cycles saved per buffer */
+#define CYCLES_SEC 60		/* line frequency */
+#define SECONDS_BUFFER 6	/* cycles per buffer */
+#define CYCLE_COUNT (CYCLES_SEC * SECONDS_BUFFER) /* cycles in buffer */
 #define SAMPLE_SHIFT 8
 
-#define CYCLES_SEC 60		/* line frequency */
 #define SAMPLES_CYCLE 16	/* samples per wave */
 #define CHAN_PAIRS 2
 #define ADC_BITS 12		/* number of adc bits */
@@ -116,7 +117,11 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define VREF_10 33		/* rev voltage time volt scale factor */
 
 #define DISPLAY_INTERVAL (12 * 1000) /* buffer display interval */
-#define MEASURE_INTERVAL (60 * 1000) /* measurement interval */
+#define MEASURE_INTERVAL (60 * 1000) /* one min measurement interval */
+
+#define BUFFERS_1M (60 / SECONDS_BUFFER)
+#define BUFFERS_15M (15 * BUFFERS_1M)
+#define BUFFERS_60M (60 * BUFFERS_1M)
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
 enum chanState {initRms, avgRms, rmsDone};
@@ -158,13 +163,43 @@ typedef struct s_rms
 typedef struct s_pwrData
 {
  uint32_t time;			/* time of reading */
+ int samples;			/* samples */
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
- int64_t pwrSum;		/* sum of voltage times current */
- int samples;			/* samples */
 } T_PWR_DATA, *P_PWR_DATA;
+
+typedef struct s_pwrSave
+{
+ uint32_t time;			/* time of reading */
+ int samples;			/* samples */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
+} T_PWR_SAVE, *P_PWR_SAVE;
+
+typedef struct s_pwrAccum
+{
+ uint32_t time;			/* time of reading */
+ int buffers;			/* buffers added */
+ int samples;			/* samples */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
+} T_PWR_ACCUM, *P_PWR_ACCUM;
+
+typedef struct s_pwrTotal
+{
+ T_PWR_ACCUM p;			/* power save data */
+ const char *label;		/* interval label */
+ int vRms;			/* rms voltage */
+ int cRms;			/* rms current */
+ int realPwr;			/* real power */
+ int aprntPwr;			/* apparent power */
+ int pwrFactor;			/* power factor */
+} T_PWR_TOTAL, *P_PWR_TOTAL;
 
 typedef struct s_pwrBuf
 {
@@ -178,6 +213,9 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ uint32_t bufTime;		/* time of current buffer */
+ int bufCount;			/* number of buffers processed */
+ uint32_t lastBufTime;		/* last buffer time */
  uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
@@ -191,11 +229,10 @@ typedef struct s_rmsPwr
  T_RMS c;			/* interrupt current accumulator */
  T_RMS v;			/* interrupt voltage accumulator */
  int64_t pwrSum;		/* interrupt power sum */
- /* values for one minute reporting */
- int samplesTotal;		/* total Samples */
- int64_t vSumTotal;		/* vsum total */
- int64_t cSumTotal;		/* csum total */
- int64_t pwrSumTotal;		/* pwrsum total */
+ /* saved values for various intervals */
+ T_PWR_TOTAL pwr1M;		/* one minute power */
+ T_PWR_TOTAL pwr15M;		/* 15 mounte power*/
+ T_PWR_TOTAL pwr60M;		/* 60 minute power */
  /* one minute calculated values */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
@@ -280,6 +317,13 @@ EXT uint32_t tmrFreq;
 EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
+
+#define PWR_SAVE_BUFFERS 60
+
+EXT T_PWR_SAVE pwrSaveBuf[PWR_SAVE_BUFFERS];
+EXT bool pwrSaveActive;
+EXT int pwrSaveCount;
+EXT P_PWR_SAVE pwrSavePtr;
 
 #if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
@@ -547,9 +591,9 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
    pwrScale /= (double) (ADC_MAX * ADC_MAX);
    pwrScale *= (double) (cfg->curScale * cfg->voltScale / VOLT_SCALE);
    pwr->pwrScale = pwrScale;
-//   pwr->pwrScaleNum = (VREF_1000 * VREF_1000 *
-//		       cfg->curScale * cfg->voltScale);
-//   pwr->pwrScaleDenom = ADC_MAX * ADC_MAX;
+   pwr->pwr1M.label = "1M ";
+   pwr->pwr15M.label = "15M";
+   pwr->pwr60M.label = "60M";
    pwr->state = initAvg;
    pwr->lastState = initAvg;
    pwr->label = cfg->label;
@@ -670,6 +714,69 @@ char *i64toa(int64_t val, char *buf)
  return(buf);
 }
 
+void savePwrData(P_PWR_DATA buf)
+{
+ if (pwrSaveActive)
+ {
+  P_PWR_SAVE save = pwrSavePtr;
+  save->time = buf->time;
+  save->samples = buf->samples;
+  save->vSum = buf->vSum;
+  save->cSum = buf->cSum;
+  save->pwrSum = buf->pwrSum;
+  pwrSaveCount += 1;
+  pwrSavePtr += 1;
+  if (pwrSaveCount >= PWR_SAVE_BUFFERS)
+  {
+   pwrSavePtr = pwrSaveBuf;
+   pwrSaveCount = 0;
+  }
+ }
+}
+
+void pwrAdd(P_PWR_ACCUM dst, P_PWR_ACCUM src)
+{
+ dst->samples += src->samples;
+ dst->buffers += src->buffers;
+ dst->vSum += src->vSum;
+ dst->cSum += src->cSum;
+ dst->pwrSum += src->pwrSum;
+}
+
+void pwrClr(uint32_t *p)
+{
+ int count = sizeof(T_PWR_ACCUM) / sizeof(int32_t);
+ while (--count >= 0)
+ {
+  *p++ = 0;
+ }
+}
+
+void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
+{
+ int samples = p->p.samples;
+ /* voltage in tenths of a volt */
+ p->vRms = (int) (sqrt(p->p.vSum / samples) * pwr->voltScale);
+ /* current in milliamps */
+ p->cRms = (int) (sqrt(p->p.cSum / samples) * pwr->curScale);
+ /* power in milliamp * volts */
+ p->realPwr = (int) ((p->p.pwrSum * pwr->pwrScale) / samples);
+ /* power in milliamp * volts */
+ p->aprntPwr = (p->vRms * p->cRms) / VOLT_SCALE;
+ p->pwrFactor = (100 * p->realPwr) / p->aprntPwr;
+
+ char convBuf[32];
+ printf("p%s0 %5u buf %3d %5d samples %4d vSum %16s ",
+	p->label, (unsigned int) (pwr->bufTime - p->p.time),
+	p->p.buffers, pwr->bufCount-1,
+	samples, i64toa(p->p.vSum, convBuf));
+ printf("cSum %16s ", i64toa(p->p.cSum, convBuf));
+ printf("pwrSum %16s\n", i64toa(p->p.pwrSum, convBuf));
+
+ printf("p%s1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
+	p->label, p->vRms, p->cRms, p->aprntPwr, p->realPwr, p->pwrFactor);
+}
+
 void updatePower(P_CHANCFG chan)
 {
  P_RMSPWR pwr = chan->pwr;
@@ -685,11 +792,14 @@ void updatePower(P_CHANCFG chan)
   pwr->pwrBuf.empPtr = p;
 
   int samples = buf->samples;
+  pwr->bufTime = buf->time;
+  pwr->pwr1M.p.buffers += 1;
+  pwr->pwr1M.p.samples += samples;
+  pwr->pwr1M.p.vSum += buf->vSum;
+  pwr->pwr1M.p.cSum += buf->cSum;
+  pwr->pwr1M.p.pwrSum += buf->pwrSum;
 
-  pwr->samplesTotal += samples;
-  pwr->vSumTotal += buf->vSum;
-  pwr->cSumTotal += buf->cSum;
-  pwr->pwrSumTotal += buf->pwrSum;
+  // savePwrData(buf);
 
   uint32_t t = millis();
   if ((t - pwr->displayTime) >= DISPLAY_INTERVAL)
@@ -702,7 +812,7 @@ void updatePower(P_CHANCFG chan)
    /* current in milliamps */
    int cRms = (int) (iSqrt(buf->cSum / samples) * pwr->curScale);
    /* power in milliamp * volts */
-   int realPwr = (int) (buf->pwrSum * pwr->pwrScale) / samples;
+   int realPwr = (int) ((buf->pwrSum * pwr->pwrScale) / samples);
    /* power in milliamp * volts */
    int aprntPwr = (vRms * cRms) / VOLT_SCALE;
    int pwrFactor = (100 * realPwr) / aprntPwr;
@@ -721,6 +831,17 @@ void updatePower(P_CHANCFG chan)
    pwr->lastTime = buf->time;
   }
 
+  {
+   char convBuf[32];
+   printf("b %5d,%5u,%4d,%10s,",
+	  pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
+	  buf->samples, i64toa(buf->vSum, convBuf));
+   printf("%10s,", i64toa(buf->cSum, convBuf));
+   printf("%10s\n", i64toa(buf->pwrSum, convBuf));
+   pwr->bufCount += 1;
+   pwr->lastBufTime = buf->time;
+  }
+
   __disable_irq();
   pwr->pwrBuf.count -= 1;
   __enable_irq();
@@ -728,36 +849,28 @@ void updatePower(P_CHANCFG chan)
   dbg0Clr();
   putDbg('P');
 
-  if ((t - pwr->measureTime) >= MEASURE_INTERVAL)
+  if (pwr->pwr1M.p.buffers >= BUFFERS_1M)
   {
-   t -= pwr->measureTime;
-   pwr->measureTime += MEASURE_INTERVAL;
-   checkNewLine();
+   pwrCalc(pwr, &pwr->pwr1M);
+   pwrAdd(&pwr->pwr15M.p, &pwr->pwr1M.p);
 
-   samples = pwr->samplesTotal;
-   /* voltage in tenths of a volt */
-   pwr->vRms = (int) (iSqrt(pwr->vSumTotal / samples) * pwr->voltScale);
-   /* current in milliamps */
-   pwr->cRms = (int) (iSqrt(pwr->cSumTotal / samples) * pwr->curScale);
-   /* power in milliamp * volts */
-   pwr->realPwr = (int) ((pwr->pwrSumTotal * pwr->pwrScale) / samples);
-   /* power in milliamp * volts */
-   pwr->aprntPwr = (pwr->vRms * pwr->cRms) / VOLT_SCALE;
-   pwr->pwrFactor = (100 * pwr->realPwr) / pwr->aprntPwr;
+   if (pwr->pwr15M.p.buffers >= BUFFERS_15M)
+   {
+    pwrCalc(pwr, &pwr->pwr15M);
+    pwrAdd(&pwr->pwr60M.p, &pwr->pwr15M.p);
 
-   char convBuf[32];
-   printf("pm0 %5u samples %4d vSum %12s ",
-	  (unsigned int) t, samples, i64toa(pwr->vSumTotal, convBuf));
-   printf("cSum %12s ", i64toa(pwr->cSumTotal, convBuf));
-   printf("pwrSum %12s\n", i64toa(pwr->pwrSumTotal, convBuf));
+    if (pwr->pwr60M.p.buffers >= BUFFERS_60M)
+    {
+     pwrCalc(pwr, &pwr->pwr60M);
 
-   printf("pm1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
-	  pwr->vRms, pwr->cRms, pwr->aprntPwr, pwr->realPwr, pwr->pwrFactor);
-
-   pwr->samplesTotal = 0;
-   pwr->vSumTotal = 0;
-   pwr->cSumTotal = 0;
-   pwr->pwrSumTotal = 0;
+     pwrClr((uint32_t *) &pwr->pwr60M.p);
+     pwr->pwr60M.p.time = pwr->bufTime;
+    }
+    pwrClr((uint32_t *) &pwr->pwr15M.p);
+    pwr->pwr15M.p.time = pwr->bufTime;
+   }
+   pwrClr((uint32_t *) &pwr->pwr1M.p);
+   pwr->pwr1M.p.time = pwr->bufTime;
   }
  }
 }
@@ -1413,15 +1526,17 @@ extern "C" void timerIRQ(void)
    case initAvg:		/* sample to get zero offset */
     if (pwr->samples >= INITIAL_SAMPLES)
     {
+     pwrClr((uint32_t *) &pwr->pwr1M.p);
+     pwrClr((uint32_t *) &pwr->pwr15M.p);
+     pwrClr((uint32_t *) &pwr->pwr60M.p);
+
      uint32_t t = millis();
      pwr->displayTime = t;
      pwr->measureTime = t;
 
-     pwr->samples = 0;
-     pwr->samplesTotal = 0;
-     pwr->vSumTotal = 0;
-     pwr->cSumTotal = 0;
-     pwr->pwrSumTotal = 0;
+     pwr->pwr1M.p.time = t;
+     pwr->pwr15M.p.time = t;
+     pwr->pwr60M.p.time = t;
 
      pwr->lastBelow = false;
      pwr->state = waitZero;
@@ -1794,6 +1909,42 @@ void currentCmds(void)
    testSave = true;
    adcRun();
    break;
+  }
+  else if (ch == 'R')
+  {
+   newline();
+   memset((void *) pwrSaveBuf, 0, sizeof(pwrSaveBuf));
+   pwrSaveCount = 0;
+   pwrSavePtr = pwrSaveBuf;
+   pwrSaveActive = true;
+   printf("saving power data %u\n", (unsigned int) sizeof(pwrSaveBuf));
+  }
+  else if (ch == 'D')
+  {
+   newline();
+   pwrSaveActive = false;
+   P_PWR_SAVE buf = pwrSavePtr;
+   uint32_t lastTime = buf->time;
+   char convBuf[32];
+   int count = pwrSaveCount;
+   for (int i = 0; i < PWR_SAVE_BUFFERS; i++)
+   {
+    printf("%2d, %2d, %7u, %4d, %10s, ",
+	   i, count, (unsigned int) (buf->time - lastTime), buf->samples,
+	   i64toa(buf->vSum, convBuf));
+    printf("%10s, ", i64toa(buf->cSum, convBuf));
+    printf("%10s\n", i64toa(buf->pwrSum, convBuf));
+    flushBuf();
+    lastTime = buf->time;
+    count += 1;
+    if (count >= PWR_SAVE_BUFFERS)
+    {
+     buf = pwrSaveBuf;
+     count = 0;
+    }
+    else
+     buf += 1;
+   }
   }
   else if (ch == 's')
   {

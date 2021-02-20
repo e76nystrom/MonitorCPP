@@ -15,10 +15,11 @@
 #define PWR_SIZE 16		/* power buffers */
 #define RMS_SIZE 16		/* rms buffers */
 #define INITIAL_SAMPLES 10000	/* initial samples for offset */
-#define CYCLE_COUNT 60		/* cycles saved per buffer */
+#define CYCLES_SEC 60		/* line frequency */
+#define SECONDS_BUFFER 6	/* cycles per buffer */
+#define CYCLE_COUNT (CYCLES_SEC * SECONDS_BUFFER) /* cycles in buffer */
 #define SAMPLE_SHIFT 8
 
-#define CYCLES_SEC 60		/* line frequency */
 #define SAMPLES_CYCLE 16	/* samples per wave */
 #define CHAN_PAIRS 2
 #define ADC_BITS 12		/* number of adc bits */
@@ -32,7 +33,11 @@
 #define VREF_10 33		/* rev voltage time volt scale factor */
 
 #define DISPLAY_INTERVAL (12 * 1000) /* buffer display interval */
-#define MEASURE_INTERVAL (60 * 1000) /* measurement interval */
+#define MEASURE_INTERVAL (60 * 1000) /* one min measurement interval */
+
+#define BUFFERS_1M (60 / SECONDS_BUFFER)
+#define BUFFERS_15M (15 * BUFFERS_1M)
+#define BUFFERS_60M (60 * BUFFERS_1M)
 
 enum pwrState {initAvg, waitZero, avgData, cycleDone};
 enum chanState {initRms, avgRms, rmsDone};
@@ -74,13 +79,43 @@ typedef struct s_rms
 typedef struct s_pwrData
 {
  uint32_t time;			/* time of reading */
+ int samples;			/* samples */
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
- int64_t pwrSum;		/* sum of voltage times current */
- int samples;			/* samples */
 } T_PWR_DATA, *P_PWR_DATA;
+
+typedef struct s_pwrSave
+{
+ uint32_t time;			/* time of reading */
+ int samples;			/* samples */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
+} T_PWR_SAVE, *P_PWR_SAVE;
+
+typedef struct s_pwrAccum
+{
+ uint32_t time;			/* time of reading */
+ int buffers;			/* buffers added */
+ int samples;			/* samples */
+ int64_t vSum;			/* voltage sum of squares */
+ int64_t cSum;			/* current sum of squares */
+ int64_t pwrSum;		/* sum of voltage times current */
+} T_PWR_ACCUM, *P_PWR_ACCUM;
+
+typedef struct s_pwrTotal
+{
+ T_PWR_ACCUM p;			/* power save data */
+ const char *label;		/* interval label */
+ int vRms;			/* rms voltage */
+ int cRms;			/* rms current */
+ int realPwr;			/* real power */
+ int aprntPwr;			/* apparent power */
+ int pwrFactor;			/* power factor */
+} T_PWR_TOTAL, *P_PWR_TOTAL;
 
 typedef struct s_pwrBuf
 {
@@ -94,6 +129,9 @@ typedef struct s_rmsPwr
 {
  pwrState state;		/* curent state */
  pwrState lastState;		/* last state */
+ uint32_t bufTime;		/* time of current buffer */
+ int bufCount;			/* number of buffers processed */
+ uint32_t lastBufTime;		/* last buffer time */
  uint32_t lastTime;		/* last update time */
  char label;			/* channel label */
  bool lastBelow;		/* last sample below voltage offset */
@@ -107,11 +145,10 @@ typedef struct s_rmsPwr
  T_RMS c;			/* interrupt current accumulator */
  T_RMS v;			/* interrupt voltage accumulator */
  int64_t pwrSum;		/* interrupt power sum */
- /* values for one minute reporting */
- int samplesTotal;		/* total Samples */
- int64_t vSumTotal;		/* vsum total */
- int64_t cSumTotal;		/* csum total */
- int64_t pwrSumTotal;		/* pwrsum total */
+ /* saved values for various intervals */
+ T_PWR_TOTAL pwr1M;		/* one minute power */
+ T_PWR_TOTAL pwr15M;		/* 15 mounte power*/
+ T_PWR_TOTAL pwr60M;		/* 60 minute power */
  /* one minute calculated values */
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
@@ -196,6 +233,13 @@ EXT uint32_t tmrFreq;
 EXT bool pwrActive;
 EXT int maxChan;
 EXT int curChan;
+
+#define PWR_SAVE_BUFFERS 60
+
+EXT T_PWR_SAVE pwrSaveBuf[PWR_SAVE_BUFFERS];
+EXT bool pwrSaveActive;
+EXT int pwrSaveCount;
+EXT P_PWR_SAVE pwrSavePtr;
 
 #if !defined(__CURRENT__)
 EXT T_CHANCFG chanCfg[MAX_CHAN];
