@@ -23,28 +23,43 @@
 #include <stdarg.h>
 
 #if defined(ARDUINO_ARCH_STM32)
-#include <Arduino.h>
+
+#include "monitorSTM32.h"
+
 #else  /* ARDUINO_ARCH_STM32 */
+
 #include "adc.h"
 #include "config.h"
 #include "serialio.h"
 //#include "dma.h"
 #include "tim.h"
+
+#if defined(EXT)
+#undef EXT
+#endif	/* EXT */
+#define EXT
+
+#include "current.h"
+
+#undef EXT
 #endif	/* ARDUINO_ARCH_STM32 */
 
 #include "stm32Info.h"
 
-#ifdef EXT
+#if defined(EXT)
 #undef EXT
 #endif	/* EXT */
 
 #define EXT
 #if defined(ARDUINO_ARCH_STM32)
+#include "current.h"
 #include "monitor.h"
+#include "currentSTM32.h"
 #endif	/* ARDUINO_ARCH_STM32 */
 
-#include "current.h"
 #include "cyclectr.h"
+
+#if !defined(ARDUINO_ARCH_STM32)
 
 #if MAX_CHAN_POWER > 0
 T_RMSPWR rmsPower[MAX_CHAN_POWER];
@@ -67,6 +82,7 @@ T_CHANCFG chanCfg[MAX_CHAN] =
   (P_RMSPWR) &rmsData[0]},
 #endif	/* 0 */
 };
+#endif	/* ARDUINO_ARCH_STM32 */
 
 #define DMA 0
 #define SIMULTANEOUS 0
@@ -83,6 +99,8 @@ extern DMA_HandleTypeDef hdma_adc1;
 #endif	/* STM32MON */
 
 #if defined(__CURRENT_INC__)	// <-
+#if !defined(__CURRENT_INC__)
+#define __CURRENT_INC__
 
 #if defined(STM32F1)
 #include "stm32f1xx_ll_adc.h"
@@ -167,6 +185,7 @@ typedef struct s_pwrData
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
 } T_PWR_DATA, *P_PWR_DATA;
@@ -178,6 +197,7 @@ typedef struct s_pwrSave
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
 } T_PWR_SAVE, *P_PWR_SAVE;
 
 typedef struct s_pwrAccum
@@ -188,6 +208,7 @@ typedef struct s_pwrAccum
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
 } T_PWR_ACCUM, *P_PWR_ACCUM;
 
 typedef struct s_pwrTotal
@@ -197,8 +218,10 @@ typedef struct s_pwrTotal
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
+ int absRealPwr;		/* abs val real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
+ char pwrStr[16];		/* power string */
 } T_PWR_TOTAL, *P_PWR_TOTAL;
 
 typedef struct s_pwrBuf
@@ -229,6 +252,7 @@ typedef struct s_rmsPwr
  T_RMS c;			/* interrupt current accumulator */
  T_RMS v;			/* interrupt voltage accumulator */
  int64_t pwrSum;		/* interrupt power sum */
+ int64_t absPwrSum;		/* interrupt abs val power sum */
  /* saved values for various intervals */
  T_PWR_TOTAL pwr1M;		/* one minute power */
  T_PWR_TOTAL pwr15M;		/* 15 mounte power*/
@@ -465,6 +489,7 @@ inline void     adcTmrCC1SetIE()      {TIM1->DIER |= TIM_DIER_CC1IE;}
 unsigned int millis(void);
 #endif	/* ARDUINO_ARCH_AVR */
  
+#endif	/* __CURRENT_INC__ */
 #endif /* __CURRENT_INC__ */	// ->
 #ifdef __CURRENT__
 
@@ -724,6 +749,7 @@ void savePwrData(P_PWR_DATA buf)
   save->vSum = buf->vSum;
   save->cSum = buf->cSum;
   save->pwrSum = buf->pwrSum;
+  save->absPwrSum = buf->absPwrSum;
   pwrSaveCount += 1;
   pwrSavePtr += 1;
   if (pwrSaveCount >= PWR_SAVE_BUFFERS)
@@ -741,6 +767,7 @@ void pwrAdd(P_PWR_ACCUM dst, P_PWR_ACCUM src)
  dst->vSum += src->vSum;
  dst->cSum += src->cSum;
  dst->pwrSum += src->pwrSum;
+ dst->absPwrSum += src->absPwrSum;
 }
 
 void pwrClr(uint32_t *p)
@@ -761,20 +788,28 @@ void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
  p->cRms = (int) (sqrt(p->p.cSum / samples) * pwr->curScale);
  /* power in milliamp * volts */
  p->realPwr = (int) ((p->p.pwrSum * pwr->pwrScale) / samples);
+ p->absRealPwr = (int) ((p->p.absPwrSum * pwr->pwrScale) / samples);
  /* power in milliamp * volts */
  p->aprntPwr = (p->vRms * p->cRms) / VOLT_SCALE;
- p->pwrFactor = (100 * p->realPwr) / p->aprntPwr;
+ p->pwrFactor = (100 * p->absRealPwr) / p->aprntPwr;
 
+ int pWatts = p->realPwr / CURRENT_SCALE;
+ int fracWatts = p->realPwr - pWatts * CURRENT_SCALE;
+ sprintf(p->pwrStr, "%d.%03d", pWatts, fracWatts);
+	 
  char convBuf[32];
  printf("p%s0 %5u buf %3d %5d samples %4d vSum %16s ",
 	p->label, (unsigned int) (pwr->bufTime - p->p.time),
 	p->p.buffers, pwr->bufCount-1,
 	samples, i64toa(p->p.vSum, convBuf));
  printf("cSum %16s ", i64toa(p->p.cSum, convBuf));
- printf("pwrSum %16s\n", i64toa(p->p.pwrSum, convBuf));
+ printf("pwrSum %16s ", i64toa(p->p.pwrSum, convBuf));
+ printf("absPwrSum %16s\n", i64toa(p->p.absPwrSum, convBuf));
 
- printf("p%s1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
-	p->label, p->vRms, p->cRms, p->aprntPwr, p->realPwr, p->pwrFactor);
+ printf("p%s1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d "
+	"watts %s\n",
+	p->label, p->vRms, p->cRms, p->aprntPwr, p->realPwr, p->pwrFactor,
+	p->pwrStr);
 }
 
 void updatePower(P_CHANCFG chan)
@@ -798,6 +833,7 @@ void updatePower(P_CHANCFG chan)
   pwr->pwr1M.p.vSum += buf->vSum;
   pwr->pwr1M.p.cSum += buf->cSum;
   pwr->pwr1M.p.pwrSum += buf->pwrSum;
+  pwr->pwr1M.p.absPwrSum += buf->absPwrSum;
 
   // savePwrData(buf);
 
@@ -813,9 +849,10 @@ void updatePower(P_CHANCFG chan)
    int cRms = (int) (iSqrt(buf->cSum / samples) * pwr->curScale);
    /* power in milliamp * volts */
    int realPwr = (int) ((buf->pwrSum * pwr->pwrScale) / samples);
+   int absRealPwr = (int) ((buf->absPwrSum * pwr->pwrScale) / samples);
    /* power in milliamp * volts */
    int aprntPwr = (vRms * cRms) / VOLT_SCALE;
-   int pwrFactor = (100 * realPwr) / aprntPwr;
+   int pwrFactor = (100 * absRealPwr) / aprntPwr;
 
    printf("pi0 %2d %5u ", ep, (unsigned int) (buf->time - pwr->lastTime));
    char convBuf[32];
@@ -825,6 +862,8 @@ void updatePower(P_CHANCFG chan)
 	  buf->vDelta, i64toa(buf->cSum, convBuf));
    printf("cDelta %4d pwrSum %12s\n",
 	  buf->cDelta, i64toa(buf->pwrSum, convBuf));
+   printf("cDelta %4d absPwrSum %12s\n",
+	  buf->cDelta, i64toa(buf->absPwrSum, convBuf));
 
    printf("pi1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d\n",
 	  vRms, cRms, aprntPwr, realPwr, pwrFactor);
@@ -837,7 +876,8 @@ void updatePower(P_CHANCFG chan)
 	  pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
 	  buf->samples, i64toa(buf->vSum, convBuf));
    printf("%10s,", i64toa(buf->cSum, convBuf));
-   printf("%10s\n", i64toa(buf->pwrSum, convBuf));
+   printf("%10s,", i64toa(buf->pwrSum, convBuf));
+   printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
    pwr->bufCount += 1;
    pwr->lastBufTime = buf->time;
   }
@@ -853,6 +893,14 @@ void updatePower(P_CHANCFG chan)
   {
    pwrCalc(pwr, &pwr->pwr1M);
    pwrAdd(&pwr->pwr15M.p, &pwr->pwr1M.p);
+
+#if defined(ARDUINO_ARCH_STM32) && defined(WIFI_ENA)
+   char buf[128];
+   char *p;
+   p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
+   sprintf(p, "%s", pwr->pwr1M.pwrStr);
+   emonData(buf);
+#endif	/* ARDUINO_ARCH_STM32 && WIFI_ENA */
 
    if (pwr->pwr15M.p.buffers >= BUFFERS_15M)
    {
@@ -946,15 +994,15 @@ void updateRms(P_CHANCFG chan)
    rms->rmsSamples = 0;
    rms->rmsSum = 0;
 
-#if defined(ARDUINO_ARCH_STM32)
-#if defined(WIFI_ENA)
+#if 0
+#if defined(ARDUINO_ARCH_STM32) && defined(WIFI_ENA)
    char buf[128];
    char *p;
    p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
    sprintf(p, "%d.%03d", amps, mAmps);
    emonData(buf);
-#endif	/* WIFI_ENA */
-#endif	/* ARDUINO_ARCH_STM32 */
+#endif	/* ARDUINO_ARCH_STM32 && WIFI_ENA*/
+#endif
   } /* MEASURE_INTEVAL */
  }
 }
@@ -1555,6 +1603,7 @@ extern "C" void timerIRQ(void)
       pwr->c.max = 0;
       pwr->c.min = ADC_MAX;
       pwr->pwrSum = 0;
+      pwr->absPwrSum = 0;
       pwr->samples = 0;
       pwr->state = avgData;
       pwr->cycleCount = CYCLE_COUNT;
@@ -1566,7 +1615,14 @@ extern "C" void timerIRQ(void)
     break;
  
    case avgData:		/* sample for cycles */
-    pwr->pwrSum += pwr->v.value * pwr->c.value;
+   {
+    int instPwr = pwr->v.value * pwr->c.value;
+    pwr->pwrSum += instPwr;
+    if (instPwr >= 0)
+     pwr->absPwrSum += instPwr;
+    else
+     pwr->absPwrSum -= instPwr;
+
     if (pwr->v.sample >= pwr->v.offset)
     {
      if (pwr->lastBelow)
@@ -1592,6 +1648,7 @@ extern "C" void timerIRQ(void)
 	pwrData->cSum = pwr->c.sum;
 	pwrData->cDelta = pwr->c.max - pwr->c.min;
 	pwrData->pwrSum = pwr->pwrSum;
+	pwrData->absPwrSum = pwr->absPwrSum;
 
 	pwr->pwrBuf.count += 1;
 	putDbg('p');
@@ -1603,6 +1660,7 @@ extern "C" void timerIRQ(void)
        pwr->c.max = 0;
        pwr->c.min = ADC_MAX;
        pwr->pwrSum = 0;
+       pwr->absPwrSum = 0;
        pwr->samples = 0;
        pwr->cycleCount = CYCLE_COUNT;
       }
@@ -1611,7 +1669,8 @@ extern "C" void timerIRQ(void)
     }
     else
      pwr->lastBelow = true;
-    break;
+   }
+   break;
 
    default:
     pwr->samples = 0;
@@ -1844,8 +1903,6 @@ extern "C" void ADC1_2_IRQHandler(void)
  } /* adc2 interrupt active */
 }
 
-#if !defined(ARDUINO_ARCH_STM32)
-
 void printRmsBuf(P_RMS rms)
 {
  int count = RMS_DATA_SIZE;
@@ -1877,15 +1934,29 @@ void currentCmds(void)
 {
  while (1)
  {
+  char ch;
   printf("\nC: ");
   flushBuf();
+#if defined(ARDUINO_ARCH_STM32)
+  while (1)
+  {
+   if (DBGPORT.available())
+   {
+    ch = DBGPORT.read();
+    DBGPORT.write(ch);
+    newLine();
+    break;
+   }
+  }
+#else
   while (dbgRxReady() == 0)	/* while no character */
   {
    pollBufChar();		/* check for data to output */
   }
-  char ch = dbgRxRead();
+  ch = dbgRxRead();
   putBufChar(ch);
   newline();
+#endif	/* ARDUINO_ARCH_STM32 */
   if (ch == 'e')
   {
    adcTmrStop();
@@ -1933,7 +2004,8 @@ void currentCmds(void)
 	   i, count, (unsigned int) (buf->time - lastTime), buf->samples,
 	   i64toa(buf->vSum, convBuf));
     printf("%10s, ", i64toa(buf->cSum, convBuf));
-    printf("%10s\n", i64toa(buf->pwrSum, convBuf));
+    printf("%10s, ", i64toa(buf->pwrSum, convBuf));
+    printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
     flushBuf();
     lastTime = buf->time;
     count += 1;
@@ -2067,6 +2139,5 @@ void currentCmds(void)
   }
  }
 }
-#endif	/* ARDUINO_ARCH_STM32 */
 
 #endif	/* __CURRENT__ */

@@ -121,11 +121,12 @@ int16_t monitorLoop(void)
 
  putstr("polled output starting\n");
 
+ uint32_t tmp = RCC->BDCR;	/* save control register */
+
  RCC->BDCR |= RCC_BDCR_BDRST;	/* reset backup registers */
  RCC->BDCR &= ~RCC_BDCR_BDRST;
 
- RCC->BDCR = (RCC_BDCR_RTCEN | RCC_BDCR_RTCSEL |
-	      RCC_BDCR_LSERDY |RCC_BDCR_LSEON); /* enable real time clock */
+ RCC->BDCR = tmp;		/* restore control register */
 
 #if 0
  DBGMCU->APB1FZ = DBGMCU_APB1_FZ_DBG_IWDG_STOP; /* stop wd on debug */
