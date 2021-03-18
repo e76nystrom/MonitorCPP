@@ -1,3 +1,5 @@
+#if !defined(__CONFIG_H__)
+#define __CONFIG_H__
 #include "main.h"
 #define WD_ENA 1
 
@@ -26,3 +28,4 @@
 #endif	/* 0 */
 
 #include "pinDef.h"
+#endif	/* __CONFIG_H__ */

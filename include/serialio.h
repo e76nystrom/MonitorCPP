@@ -1,6 +1,6 @@
 #if 1	// <-
 
-#include "config.h"
+#include <config.h>
 #include "dbg.h"
 
 #if !defined(EXT)
@@ -24,6 +24,7 @@ void newline(void);
 
 /* debug port routines */
 
+char prompt(const char *str);
 void putx(char c);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
