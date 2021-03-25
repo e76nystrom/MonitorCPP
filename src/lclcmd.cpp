@@ -175,6 +175,8 @@ void switchRTC(void)
   bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
   flushBuf();
   RCC->BDCR |= RCC_BDCR_LSEON;
+  bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
+  flushBuf();
   t0 = millis();
   while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0)
   {
@@ -182,6 +184,7 @@ void switchRTC(void)
    {
     err = true;
     printf("RCC_BDCR_LSERDY == 0\n");
+    rccInfo();
     flushBuf();
     break;
    }
