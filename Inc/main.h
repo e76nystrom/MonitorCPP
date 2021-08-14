@@ -84,6 +84,10 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define Led_Pin GPIO_PIN_13
 #define Led_GPIO_Port GPIOC
+#define TestIn_Pin GPIO_PIN_14
+#define TestIn_GPIO_Port GPIOC
+#define TestOut_Pin GPIO_PIN_15
+#define TestOut_GPIO_Port GPIOC
 #define Dbg4_Pin GPIO_PIN_0
 #define Dbg4_GPIO_Port GPIOB
 #define SPI_SEL_Pin GPIO_PIN_12

@@ -25,6 +25,7 @@ void newline(void);
 /* debug port routines */
 
 void putx(char c);
+char prompt(const char *str);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
 char getx(void);

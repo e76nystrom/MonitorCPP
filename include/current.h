@@ -1,4 +1,6 @@
 #if 1	// <-
+#if !defined(__CURRENT_INC__)
+#define __CURRENT_INC__
 
 #if defined(STM32F1)
 #include "stm32f1xx_ll_adc.h"
@@ -83,6 +85,7 @@ typedef struct s_pwrData
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
  int vDelta;			/* voltage adc delta value */
  int cDelta;			/* current adc delta value */
 } T_PWR_DATA, *P_PWR_DATA;
@@ -94,6 +97,7 @@ typedef struct s_pwrSave
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
 } T_PWR_SAVE, *P_PWR_SAVE;
 
 typedef struct s_pwrAccum
@@ -104,6 +108,7 @@ typedef struct s_pwrAccum
  int64_t vSum;			/* voltage sum of squares */
  int64_t cSum;			/* current sum of squares */
  int64_t pwrSum;		/* sum of voltage times current */
+ int64_t absPwrSum;		/* sum abs val of voltage times current */
 } T_PWR_ACCUM, *P_PWR_ACCUM;
 
 typedef struct s_pwrTotal
@@ -113,8 +118,10 @@ typedef struct s_pwrTotal
  int vRms;			/* rms voltage */
  int cRms;			/* rms current */
  int realPwr;			/* real power */
+ int absRealPwr;		/* abs val real power */
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
+ char pwrStr[16];		/* power string */
 } T_PWR_TOTAL, *P_PWR_TOTAL;
 
 typedef struct s_pwrBuf
@@ -145,6 +152,7 @@ typedef struct s_rmsPwr
  T_RMS c;			/* interrupt current accumulator */
  T_RMS v;			/* interrupt voltage accumulator */
  int64_t pwrSum;		/* interrupt power sum */
+ int64_t absPwrSum;		/* interrupt abs val power sum */
  /* saved values for various intervals */
  T_PWR_TOTAL pwr1M;		/* one minute power */
  T_PWR_TOTAL pwr15M;		/* 15 mounte power*/
@@ -381,4 +389,5 @@ inline void     adcTmrCC1SetIE()      {TIM1->DIER |= TIM_DIER_CC1IE;}
 unsigned int millis(void);
 #endif	/* ARDUINO_ARCH_AVR */
  
+#endif	/* __CURRENT_INC__ */
 #endif /* __CURRENT_INC__ */	// ->

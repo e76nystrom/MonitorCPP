@@ -2,7 +2,7 @@
 
 #if !defined(EXT)
 #define EXT extern
-#endif
+#endif	/* EXT */
 
 void lclcmd(int ch);
 
@@ -10,6 +10,6 @@ void lclcmd(int ch);
 void afioInfo(void);
 void bkpInfo(void);
 void rtcInfo(void);
-#endif
+#endif	/* 0 */
 
 #endif	// ->

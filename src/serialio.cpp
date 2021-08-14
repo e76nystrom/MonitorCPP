@@ -52,6 +52,7 @@ void newline(void);
 /* debug port routines */
 
 void putx(char c);
+char prompt(const char *str);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
 char getx(void);
@@ -327,6 +328,21 @@ void putx(char c)
  while ((DBGPORT->SR & USART_SR_TXE) == 0)
   ;
  DBGPORT->DR = c;
+}
+
+char prompt(const char *str)
+{
+ char ch;
+
+ if (str != 0)
+ {
+  printf(str);
+  flushBuf();
+ }
+ ch = getx();
+ putx(ch);
+ newline();
+ return(ch);
 }
 
 void putstr(const char *p)
