@@ -29,7 +29,6 @@
 #else  /* ARDUINO_ARCH_STM32 */
 
 #include "adc.h"
-#include "config.h"
 #include "serialio.h"
 //#include "dma.h"
 #include "tim.h"

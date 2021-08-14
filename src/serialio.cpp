@@ -1,3 +1,4 @@
+
 #if !defined(INCLUDE)
 #define __SERIALIO__
 #if defined(STM32F1)
@@ -27,7 +28,7 @@
 
 #if defined(__SERIALIO_INC__)	// <-
 
-#include "config.h"
+#include <config.h>
 #include "dbg.h"
 
 #if !defined(EXT)
@@ -51,6 +52,7 @@ void newline(void);
 
 /* debug port routines */
 
+char prompt(const char *str);
 void putx(char c);
 char prompt(const char *str);
 void putstr(const char *p);
@@ -321,6 +323,23 @@ void newline(void)
   putx('\n');
   putx('\r');
  }
+}
+
+char prompt(const char *str)
+{
+ char ch;
+ 
+ if (str != 0)
+ {
+  printf(str);
+  flushBuf();
+ }
+ while (dbgRxReady() == 0)	/* while no character */
+  ;
+ ch = dbgRxRead();
+ putBufChar(ch);
+ newline();
+ return(ch);
 }
 
 void putx(char c)

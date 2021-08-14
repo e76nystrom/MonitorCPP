@@ -15,7 +15,6 @@
 #include <math.h>
 
 #define EXT extern
-#include "config.h"
 #include "serialio.h"
 #include "current.h"
 #include "cyclectr.h"
@@ -26,6 +25,7 @@
 #include "lcd.h"
 #include "spix.h"
 #include "max31856.h"
+#include "max31865.h"
 #include "stm32Info.h"
 
 #ifdef EXT
@@ -175,6 +175,8 @@ void switchRTC(void)
   bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
   flushBuf();
   RCC->BDCR |= RCC_BDCR_LSEON;
+  bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
+  flushBuf();
   t0 = millis();
   while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0)
   {
@@ -182,6 +184,7 @@ void switchRTC(void)
    {
     err = true;
     printf("RCC_BDCR_LSERDY == 0\n");
+    rccInfo();
     flushBuf();
     break;
    }
@@ -590,7 +593,7 @@ void lclcmd(int ch)
 #if 0
  else if (ch == 'p')
  {
-  if (query(&getnm, ' '))
+  if (query(&getnum, ' '))
   {
    print = val;
   }
@@ -599,6 +602,8 @@ void lclcmd(int ch)
 
  else if (ch == 'T')		/* thermocouple commands */
   max56Cmds();
+ else if (ch == 'U')		/* rtd commands */
+  max65Cmds();
 
 #if DBGTRK
  else if (ch == 'T')		/* print track buffer */

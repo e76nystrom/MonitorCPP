@@ -17,7 +17,6 @@
 #include <limits.h>
 
 #include "main.h"
-#include "config.h"
 #include "adc.h"
 #include "serialio.h"
 #include "lclcmd.h"
@@ -137,20 +136,7 @@ int16_t monitorLoop(void)
  while (--i >= 0)		/* while not at end of list */
   HAL_NVIC_DisableIRQ((IRQn_Type) *p++);	/* disable external interrupt */
 
-#if 0
-#if REM_ISR
- initRem();
-#else
- HAL_NVIC_DisableIRQ(REMOTE_IRQn);
-#endif
-#endif
-
  initCharBuf();
-
- putstr("start monitor loop\n");
-#if defined(REMPORT)
- putstr1("start remcmd\n");
-#endif
 
  monitorLoopSetup();
  
