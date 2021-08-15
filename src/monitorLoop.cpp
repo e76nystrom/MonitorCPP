@@ -134,7 +134,7 @@ int16_t monitorLoop(void)
  uint32_t *p = extInt;		/* external interrupt list */
  int i = sizeof(extInt) / sizeof(uint32_t); /* sizeof list */
  while (--i >= 0)		/* while not at end of list */
-  HAL_NVIC_DisableIRQ((IRQn_Type) *p++);	/* disable external interrupt */
+  HAL_NVIC_DisableIRQ((IRQn_Type) *p++); /* disable external interrupt */
 
  initCharBuf();
 

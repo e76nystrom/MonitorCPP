@@ -956,7 +956,6 @@ void updateRms(P_CHANCFG chan)
    checkNewLine();
    char convBuf[32];
    printf("%c0 %2d %5u ",
-
 	  rms->label, ep, (unsigned int) (buf->time - rms->lastTime));
    printf("sample %3d min %4d %4d max %4d %4d delta %4d "
 	  "offset %4d sum %10s rms %4d %4d\n",
@@ -1929,7 +1928,7 @@ void printRmsBuf(P_RMS rms)
  }
 }
 
-void currentCmds(void)
+void currentCmds(void)		/* C in lclcmd for current commands */
 {
  while (1)
  {
@@ -1956,7 +1955,7 @@ void currentCmds(void)
   putBufChar(ch);
   newline();
 #endif	/* ARDUINO_ARCH_STM32 */
-  if (ch == 'e')
+  if (ch == 'e')		/* stop timer to stop data collection */
   {
    adcTmrStop();
    adcTmrClrIE();
@@ -1972,13 +1971,13 @@ void currentCmds(void)
    newline();
    adcRead1();
   }
-  else if (ch == 'r')
+  else if (ch == 'r')		/* *** start here */
   {
    newline();
    testCount = 0;
    testSave = true;
    adcRun();
-   break;
+   break;			/* exit loop to allow console output */
   }
   else if (ch == 'R')
   {
