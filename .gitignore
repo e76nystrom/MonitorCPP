@@ -31,6 +31,7 @@
 *.out
 *.app
 
+.#
 .gitattributes
 .settings/*
 Debug/*
@@ -51,3 +52,5 @@ Tmp/*
 *.txt
 *.lst
 
+*.pyproj
+*.dat

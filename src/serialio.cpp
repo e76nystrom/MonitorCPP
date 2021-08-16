@@ -53,6 +53,8 @@ void newline(void);
 /* debug port routines */
 
 char prompt(const char *str);
+char query(const char *format, ...);
+char query(unsigned char (*get)(), const char *format, ...);
 void putx(char c);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
@@ -61,9 +63,6 @@ unsigned char gethex(void);
 char getstr(char *buf, int bufLen);
 unsigned char getnum(void);
 unsigned char getfloat(void);
-
-char query(const char *format, ...);
-char query(unsigned char (*get)(), const char *format, ...);
 
 void prtbuf(unsigned char *p, int size);
 void prtibuf(int16_t *p, int size);
@@ -324,23 +323,6 @@ void newline(void)
  }
 }
 
-char prompt(const char *str)
-{
- char ch;
- 
- if (str != 0)
- {
-  printf(str);
-  flushBuf();
- }
- while (dbgRxReady() == 0)	/* while no character */
-  ;
- ch = dbgRxRead();
- putBufChar(ch);
- newline();
- return(ch);
-}
-
 void putx(char c)
 {
  while ((DBGPORT->SR & USART_SR_TXE) == 0)
@@ -359,6 +341,21 @@ void putstr(const char *p)
   if (ch == '\n')
    putx('\r');
  }
+}
+
+char prompt(const char *str)
+{
+ char ch;
+
+ if (str != 0)
+ {
+  printf(str);
+  flushBuf();
+ }
+ ch = getx();
+ putx(ch);
+ newline();
+ return(ch);
 }
 
 void sndhex(unsigned char *p, int size)
@@ -394,11 +391,14 @@ void sndhex(unsigned char *p, int size)
  }
 }
 
+void powerUpdate(void);
+
 char getx(void)
 {
  while ((DBGPORT->SR & USART_SR_RXNE) == 0)
  {
   pollBufChar();
+  powerUpdate();
  }
  return(DBGPORT->DR);
 }

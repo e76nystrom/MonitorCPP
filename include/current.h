@@ -26,13 +26,15 @@
 #define CHAN_PAIRS 2
 #define ADC_BITS 12		/* number of adc bits */
 
-#define ADC_MAX ((1 << ADC_BITS) - 1) /* max adc count */
+#define ADC_MAX_VAL ((1 << ADC_BITS) - 1) /* max adc count */
 
 #define CURRENT_SCALE 1000	/* current scale factor */
 #define VOLT_SCALE 10		/* voltage scale factor */
 
 #define VREF_1000 3300		/* ref voltage times current scale factor */
 #define VREF_10 33		/* rev voltage time volt scale factor */
+
+#define PWR_INTERVAL 500	/* power update interval */
 
 #define DISPLAY_INTERVAL (12 * 1000) /* buffer display interval */
 #define MEASURE_INTERVAL (60 * 1000) /* one min measurement interval */
@@ -122,6 +124,8 @@ typedef struct s_pwrTotal
  int aprntPwr;			/* apparent power */
  int pwrFactor;			/* power factor */
  char pwrStr[16];		/* power string */
+ char vStr[16];			/* current string */
+ char cStr[16];			/* voltage string */
 } T_PWR_TOTAL, *P_PWR_TOTAL;
 
 typedef struct s_pwrBuf
@@ -235,6 +239,8 @@ typedef struct s_chanCfg
  };
 } T_CHANCFG, *P_CHANCFG;
 
+EXT unsigned int pwrUpdTime;
+ 
 EXT uint32_t clockFreq;
 EXT uint32_t tmrFreq;
 
@@ -256,11 +262,21 @@ EXT T_CHANCFG chanCfg[MAX_CHAN];
 EXT P_RMS adc1Rms;
 EXT P_RMS adc2Rms;
 
-inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX);}
+EXT bool cmdActive;
+EXT int pwrDbg;
+
+#define DBG_PWR_DISPLAY 0x01
+#define DBG_PWR_CALC 0x02
+#define DBG_PWR_SUMMARY 0x04
+#define DBG_RMS_DISPLAY 0x08
+#define DBG_RMS_MEASURE 0x10
+#define DBG_BUFFER 0x20
+
+inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX_VAL);}
 
 inline int scaleAdc(int val, float scale)
 {
- return((int) (scale * ((val * VREF_1000) / ADC_MAX)));
+ return((int) (scale * ((val * VREF_1000) / ADC_MAX_VAL)));
 }
 
 void rmsTestInit(void);
@@ -268,7 +284,7 @@ void rmsTest(void);
 
 void rmsCfgInit(P_CHANCFG cfg, int count);
 
-void currentUpdate();
+void powerUpdate();
 void updatePower(P_CHANCFG chan);
 void updateRms(P_CHANCFG chan);
 

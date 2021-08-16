@@ -298,6 +298,7 @@ void toggleRtcGPIO(void)
 
 void lclcmd(int ch)
 {
+ cmdActive = true;
  if (ch == 'i')			/* init character buffer */
  {
   initCharBuf();
@@ -682,6 +683,7 @@ void lclcmd(int ch)
   tmrInfo(TIM3);
   tmrInfo(TIM4);
  }
+ cmdActive = false;
 }
 
 #if 0

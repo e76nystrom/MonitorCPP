@@ -100,12 +100,9 @@ void monitorLoopSetup(void)
 
 #define LED_DELAY 500
 
-//#define PWR_INTERVAL (500)
-
 int16_t monitorLoop(void)
 {
  uint32_t ledUpdTime;
-// uint32_t pwrUpdTime;
  unsigned char ch;
  uint32_t extInt[] =
  {
@@ -268,31 +265,7 @@ int16_t monitorLoop(void)
 
    if (pwrActive)
    {
-#if 0
-    if ((t - pwrUpdTime) >= PWR_INTERVAL)
-    {
-     pwrUpdTime = t;
-     for (i = 0; i < maxChan; i++)
-     {
-      chanCfg[i].pwr->update = true;
-     }
-    }
-   
-    for (i = 0; i < maxChan; i++)
-    {
-     P_CHANCFG chan = &chanCfg[i];
-     if (chan->type == POWER_CHAN)
-     {
-      updatePower(chan);
-     }
-     else if (chan->type == RMS_CHAN)
-     {
-      updateRms(chan);
-     }
-    }
-#else
-    currentUpdate();
-#endif  /* 0 */
+    powerUpdate();
    }
 
    pollBufChar();		/* check for data to output */
