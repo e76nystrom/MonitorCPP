@@ -365,12 +365,16 @@ EXT P_RMS adc2Rms;
 EXT bool cmdActive;
 EXT int pwrDbg;
 
-#define DBG_PWR_DISPLAY 0x01
-#define DBG_PWR_CALC 0x02
-#define DBG_PWR_SUMMARY 0x04
-#define DBG_RMS_DISPLAY 0x08
-#define DBG_RMS_MEASURE 0x10
-#define DBG_BUFFER 0x20
+#define DBG_PWR_DISPLAY	0x001
+#define DBG_PWR_1M      0x002
+#define DBG_PWR_15M	0x004
+#define DBG_PWR_60M	0x008
+#define DBG_PWR_SEND	0x010
+#define DBG_PWR_SUMMARY 0x020
+#define DBG_RMS_DISPLAY 0x040
+#define DBG_RMS_MEASURE 0x080
+#define DBG_BUF_RAW	0x100
+#define DBG_BUF_CALC	0x200
 
 inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX_VAL);}
 
@@ -763,9 +767,11 @@ void powerUpdate()
   {
    pwrUpdTime += PWR_INTERVAL;
    newLineFlag = true;
+
    int pwrSave = pwrDbg;
    if (cmdActive)
     pwrDbg = 0;
+
    for (int i = 0; i < maxChan; i++)
    {
     P_CHANCFG chan = &chanCfg[i];
@@ -778,6 +784,7 @@ void powerUpdate()
      updateRms(chan);
     }
    }
+
    pwrDbg = pwrSave;
   }
  }
@@ -785,25 +792,25 @@ void powerUpdate()
 
 char *i64toa(int64_t val, char *buf)
 {
- char tmp[32];
+ char tmp[34];
  int count = 0;
  char *p = tmp;
  char *p1 = buf;
+
  if (val < 0)
  {
   *p1++ = '-';
   val = -val;
  }
+
  while (val != 0)
  {
-  int dig = (int) (val % 10);
-  *p++ = (char) (dig + '0');
+  *p++ = ((char) (val % 10) + '0');
   count += 1;
   val /= 10;
  }
- if (count == 0)
-  *p1++ = '0';
- else
+
+ if (count > 0)
  {
   while (--count >= 0)
    *p1++ = *--p;
@@ -854,19 +861,27 @@ void pwrClr(uint32_t *p)
 
 char *fmtVal(char *buf, int size, int val, int scale)
 {
- int pVal = val / scale;
- int fracVal = val - pVal * scale;
+ const char *neg = "";
+ if (val < 0)
+ {
+  val = -val;
+  neg = "-";
+ }
+ 
  int width = 0;
  if (scale == 1000)
   width = 3;
  else if (scale == 10)
   width = 1;
 
- snprintf(buf, size, "%d.%0*d", pVal, width, fracVal);
+ int pVal = val / scale;
+ int fracVal = val - pVal * scale;
+
+ snprintf(buf, size, "%s%d.%0*d", neg, pVal, width, fracVal);
  return(buf);
 }
 
-void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
+void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p, int dbg)
 {
  int samples = p->p.samples;
  /* voltage in tenths of a volt */
@@ -890,7 +905,7 @@ void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
  fmtVal(p->cStr, sizeof(p->cStr), p->cRms, CURRENT_SCALE);
 #endif
 	 
- if (pwrDbg & DBG_PWR_CALC)
+ if (pwrDbg & dbg)
  {
   char convBuf[32];
   printf("p%s0 %5u buf %3d %5d samples %4d vSum %16s ",
@@ -902,7 +917,7 @@ void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
   printf("absPwrSum %16s\n", i64toa(p->p.absPwrSum, convBuf));
  }
  
- if (pwrDbg & DBG_PWR_SUMMARY)
+ if (pwrDbg & dbg)
  {
   printf("p%s1 vRms %5d cRms %5d aprntPwr %8d realPwr %8d pwrFactor %3d "
 	 "watts %s\n",
@@ -910,6 +925,10 @@ void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p)
 	 p->pwrStr);
  }
 }
+
+/*
+b    18, 5999,5759,6084377237, 387033291,1461745416,1472785442
+*/
 
 void updatePower(P_CHANCFG chan)
 {
@@ -933,6 +952,30 @@ void updatePower(P_CHANCFG chan)
   pwr->pwr1M.p.cSum += buf->cSum;
   pwr->pwr1M.p.pwrSum += buf->pwrSum;
   pwr->pwr1M.p.absPwrSum += buf->absPwrSum;
+
+  if (pwrDbg & DBG_BUF_RAW)
+  {
+   char convBuf[32];
+   printf("b %2d, %5d, %5u, %4d, %10s, ",
+	  ep, pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
+	  samples, i64toa(buf->vSum, convBuf));
+   printf("%10s, ", i64toa(buf->cSum, convBuf));
+   printf("%10s, ", i64toa(buf->pwrSum, convBuf));
+   printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
+  }
+
+  if (pwrDbg & DBG_BUF_CALC)
+  {
+   int vRms = (int) (sqrt(buf->vSum / samples) * pwr->voltScale);
+   int cRms = (int) (sqrt(buf->cSum / samples) * pwr->curScale);
+   int realPwr = (int) ((buf->pwrSum * pwr->pwrScale) / samples);
+   int absRealPwr = (int) ((buf->absPwrSum * pwr->pwrScale) / samples);
+   int aprntPwr = (vRms * cRms) / VOLT_SCALE;
+   int pwrFactor = (100 * absRealPwr) / aprntPwr;
+   printf("b %2d, %5d, %5u, %4d, %4d, %5d, %7d, %7d, %2d\n",
+	  ep, pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
+	  samples, vRms, cRms, realPwr, aprntPwr, pwrFactor);
+  }
 
   // savePwrData(buf);
 
@@ -972,18 +1015,8 @@ void updatePower(P_CHANCFG chan)
    }
   }
 
-  if (pwrDbg & DBG_BUFFER)
-  {
-   char convBuf[32];
-   printf("b %5d,%5u,%4d,%10s,",
-	  pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
-	  buf->samples, i64toa(buf->vSum, convBuf));
-   printf("%10s,", i64toa(buf->cSum, convBuf));
-   printf("%10s,", i64toa(buf->pwrSum, convBuf));
-   printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
-   pwr->bufCount += 1;
-   pwr->lastBufTime = buf->time;
-  }
+  pwr->bufCount += 1;
+  pwr->lastBufTime = buf->time;
 
   __disable_irq();
   pwr->pwrBuf.count -= 1;
@@ -994,34 +1027,37 @@ void updatePower(P_CHANCFG chan)
 
   if (pwr->pwr1M.p.buffers >= BUFFERS_1M)
   {
-   pwrCalc(pwr, &pwr->pwr1M);
+   pwrCalc(pwr, &pwr->pwr1M, DBG_PWR_1M);
    pwrAdd(&pwr->pwr15M.p, &pwr->pwr1M.p);
+
+   if (pwr->pwr15M.p.buffers >= BUFFERS_15M)
+   {
+    pwrCalc(pwr, &pwr->pwr15M, DBG_PWR_15M);
+    pwrAdd(&pwr->pwr60M.p, &pwr->pwr15M.p);
+
+    if (pwr->pwr60M.p.buffers >= BUFFERS_60M)
+    {
+     pwrCalc(pwr, &pwr->pwr60M, DBG_PWR_60M);
+
+     pwrClr((uint32_t *) &pwr->pwr60M.p);
+     pwr->pwr60M.p.time = pwr->bufTime;
+    }
+
+    pwrClr((uint32_t *) &pwr->pwr15M.p);
+    pwr->pwr15M.p.time = pwr->bufTime;
+   }
 
 #if defined(ARDUINO_ARCH_STM32) && defined(WIFI_ENA)
    char buf[128];
    snprintf(buf, sizeof(buf), "node=" EMONCMS_NODE "&csv=%s,%s,%s",
 	    pwr->pwr1M.pwrStr, pwr->pwr1M.vStr, pwr->pwr1M.cStr);
    emonData(buf);
-#else
-   printf("pwr %s v %s c %s\n",
-	  pwr->pwr1M.pwrStr, pwr->pwr1M.vStr, pwr->pwr1M.cStr);
 #endif	/* ARDUINO_ARCH_STM32 && WIFI_ENA */
 
-   if (pwr->pwr15M.p.buffers >= BUFFERS_15M)
-   {
-    pwrCalc(pwr, &pwr->pwr15M);
-    pwrAdd(&pwr->pwr60M.p, &pwr->pwr15M.p);
+   if (pwrDbg & DBG_PWR_SEND)
+    printf("pwr %s v %s c %s\n",
+	   pwr->pwr1M.pwrStr, pwr->pwr1M.vStr, pwr->pwr1M.cStr);
 
-    if (pwr->pwr60M.p.buffers >= BUFFERS_60M)
-    {
-     pwrCalc(pwr, &pwr->pwr60M);
-
-     pwrClr((uint32_t *) &pwr->pwr60M.p);
-     pwr->pwr60M.p.time = pwr->bufTime;
-    }
-    pwrClr((uint32_t *) &pwr->pwr15M.p);
-    pwr->pwr15M.p.time = pwr->bufTime;
-   }
    pwrClr((uint32_t *) &pwr->pwr1M.p);
    pwr->pwr1M.p.time = pwr->bufTime;
   }
@@ -1079,38 +1115,41 @@ void updateRms(P_CHANCFG chan)
   {
    rms->measureTime += MEASURE_INTERVAL;
    rms->minuteRms = iSqrt(int(rms->rmsSum / rms->rmsSamples));
-   checkNewLine();
    char convBuf[32];
    int mRms = scaleAdc(rms->minuteRms, chan->rmsScale);
+
    if (pwrDbg & DBG_RMS_MEASURE)
+   {
+    checkNewLine();
     printf("%c1 minute rms count %d samples %5d sum %10s rms %5d %5d ",
 	   rms->label, rms->minuteCount, rms->rmsSamples,
 	   i64toa(rms->rmsSum, convBuf), rms->minuteRms, mRms);
-   if (rms->label == 'c')
-   {
-    int val = mRms / CURRENT_SCALE;
-    int mval = mRms - (val * CURRENT_SCALE);
-    if (pwrDbg & DBG_RMS_MEASURE)
+
+    if (rms->label == 'c')
+    {
+     int val = mRms / CURRENT_SCALE;
+     int mval = mRms - (val * CURRENT_SCALE);
      printf("%2d.%03d\n", val, mval);
-   }
-   else
-   {
-    int val = mRms / VOLT_SCALE;
-    int mval = mRms - (val * VOLT_SCALE);
-    if (pwrDbg & DBG_RMS_MEASURE)
+    }
+    else
+    {
+     int val = mRms / VOLT_SCALE;
+     int mval = mRms - (val * VOLT_SCALE);
      printf("%3d.%01d\n", val, mval);
+    }
    }
+
    rms->minuteCount = 0;
    rms->rmsSamples = 0;
    rms->rmsSum = 0;
 
 #if 0
 #if defined(ARDUINO_ARCH_STM32) && defined(WIFI_ENA)
-   char buf[128];
-   char *p;
-   p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
-   sprintf(p, "%d.%03d", amps, mAmps);
-   emonData(buf);
+    char buf[128];
+    char *p;
+    p = cpyStr(buf, F0("node=" EMONCMS_NODE "&csv="));
+    sprintf(p, "%d.%03d", amps, mAmps);
+    emonData(buf);
 #endif	/* ARDUINO_ARCH_STM32 && WIFI_ENA*/
 #endif
   } /* MEASURE_INTEVAL */
@@ -1477,9 +1516,86 @@ void adcRead1(void)
 #endif /* HAL */
 }
 
+void adcTmrConfig()
+{
+ clockFreq = HAL_RCC_GetHCLKFreq();
+ tmrFreq = HAL_RCC_GetPCLK2Freq();
+ printf("clock frequency %u FCY %u\n",
+	(unsigned int) clockFreq, (unsigned int) tmrFreq);
+ printf("sysTick load %d\n", (int) SysTick->LOAD);
+
+ uint32_t counter = clockFreq / (CYCLES_SEC * SAMPLES_CYCLE * CHAN_PAIRS);
+ uint16_t psc = 1;
+ uint32_t ctr;
+ while (1)
+ {
+  ctr = counter / psc;
+  if (ctr < 65536)
+   break;
+  psc += 1;
+ }
+ printf("tmr1 psc %u ctr %u\n", (unsigned int) psc, (unsigned int) ctr);
+ psc -= 1;
+ adcTmrScl(psc);
+ adcTmrMax(ctr);
+#if 1
+ adcTmrCCR(ctr / 2);
+#endif
+ newline();
+ tmrInfo(TIM1);
+}
+
+typedef struct sDbgCfg
+{
+ GPIO_TypeDef *gpio;
+ int pin;
+} T_DBG_CFG, *P_DBG_CFG;
+
+T_DBG_CFG dbgCfg[] =
+{
+#if defined(Dbg0_Pin)
+ {Dbg0_GPIO_Port, Dbg0_Pin},
+#endif
+#if defined(Dbg4_Pin)
+ {Dbg1_GPIO_Port, Dbg1_Pin},
+#endif
+#if defined(Dbg4_Pin)
+ {Dbg2_GPIO_Port, Dbg2_Pin},
+#endif
+#if defined(Dbg4_Pin)
+ {Dbg3_GPIO_Port, Dbg3_Pin},
+#endif
+#if defined(DBG4_Pin)
+ {Dbg4_GPIO_Port, Dbg4_Pin},
+#endif
+};
+
+void dbgInit()
+{
+ GPIO_InitTypeDef GPIO_InitStruct;
+
+ P_DBG_CFG dbg = dbgCfg;
+ GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+ GPIO_InitStruct.Pull = GPIO_NOPULL;
+ for (unsigned int i = 0; i < (sizeof(dbgCfg) / sizeof(T_DBG_CFG)); i++)
+ {
+  GPIO_InitStruct.Pin = dbg->pin;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+  
+  HAL_GPIO_Init(dbg->gpio, &GPIO_InitStruct);
+  dbg++;
+ }
+ gpioInfo(GPIOA);
+ newline();
+ gpioInfo(GPIOB);
+ newline();
+}
+
 void adcRun(void)
 {
- pwrDbg = DBG_PWR_SUMMARY;
+ dbgInit();
+ pwrDbg = DBG_BUF_CALC | DBG_PWR_SEND;
+ adcTmrConfig();
  rmsCfgInit(&chanCfg[0], sizeof(chanCfg) / sizeof(T_CHANCFG)); /* init cfg */
  adcTest = false;
  pwrActive = true;
@@ -1564,6 +1680,7 @@ void adcRead(void)
 #endif	/* STM32F3 */
  dbg0Clr();
 
+ newline();
  adcInfo(ADC1, 1);
  newline();
  adcInfo(ADC2, 2);
@@ -1730,6 +1847,7 @@ extern "C" void timerIRQ(void)
    {
     int instPwr = pwr->v.value * pwr->c.value;
     pwr->pwrSum += instPwr;
+    
     if (instPwr >= 0)
      pwr->absPwrSum += instPwr;
     else
@@ -1940,7 +2058,7 @@ extern "C" void ADC1_2_IRQHandler(void)
    rms->sample = sample;	/* save scaled sample */
 
    int offset = rms->offset;	/* get offset in local variable */
-   offset = offset + ((sample - offset) >> 10); /* update offset */
+   offset += ((sample - offset) >> 10); /* update offset */
    rms->offset = offset;	/* update offset */
    sample -= offset;		/* offset sample */
    sample >>= SAMPLE_SHIFT;	/* remove scale factor */
@@ -2042,13 +2160,113 @@ void printRmsBuf(P_RMS rms)
  }
 }
 
+#if defined(ARDUINO_ARCH_STM32)
+typedef struct
+{
+ char ch;
+ GPIO_TypeDef *port;
+} T_PORT_LIST, *P_PORT_LIST;
+
+typedef struct sMask
+{
+ union
+ {
+  struct
+  {
+   uint16_t mask;
+   uint16_t flag;
+  };
+  struct
+  {
+   uint32_t val;
+  };
+ };
+} T_MASK;
+
+inline void putBufChar(char c)
+{
+ DBGPORT.write(c);
+}
+
+inline int dbgRxReady()
+{
+ return(DBGPORT.available());
+}
+
+inline char getx()
+{
+ return(DBGPORT.read());
+}
+
+inline char dbgRxRead()
+{
+ return(DBGPORT.read());
+}
+
+unsigned char gethex(void)
+{
+ char ch;
+ int count;
+
+ val = 0;
+ count = 0;
+ while (count <= 8)
+ {
+  ch = getx();
+  if ((ch >= '0')
+  &&  (ch <= '9'))
+  {
+   putBufChar(ch);
+   ch -= '0';
+   count++;
+  }
+  else if ((ch >= 'a')
+  &&       (ch <= 'f'))
+  {
+   putBufChar(ch);
+   ch -= 'a' - 10;
+   count++;
+  }
+  else if ((ch == 8)
+       ||  (ch == 127))
+  {
+   if (count > 0)
+   {
+    --count;
+    val >>= 4;
+    putBufChar(8);
+    putBufChar(' ');
+    putBufChar(8);
+   }
+  }
+  else if (ch == ' ')
+  {
+   putBufChar(ch);
+   break;
+  }
+  else if (ch == '\r')
+   break;
+  else
+   continue;
+  val <<= 4;
+  val += ch;
+ }
+ return(count != 0);
+}
+
+#endif	/* ARDUINO_ARCH_STM32 */
+
 void currentCmds(void)		/* C in lclcmd for current commands */
 {
  cmdActive = true;
+ newline();
+ printf("current commands\n");
+ flushBuf();
  while (1)
  {
   char ch;
-  printf("\nC: ");
+  newline();
+  printf("C: ");
   flushBuf();
 
 #if defined(ARDUINO_ARCH_STM32)
@@ -2095,22 +2313,23 @@ void currentCmds(void)		/* C in lclcmd for current commands */
   else if (ch == 'd')
   {
    newline();
-   printf("0x01 PWR_DISP\n0x02 PWR_CALC\n0x04 PWR_SUMMARY\n"\
-	  "0x08 RMS_DISP\n0x10 RMS_MEASURE\n0x20 BUFFER\n");
-   char enable = query("dbg ena/dis: ");
-   if (enable == '1')
+   printf("0x001 PWR_DISP\n"\
+	  "0x002 PWR_1M\n"\
+	  "0x004 PWR_15M\n"\
+	  "0x008 PWR_30M\n"\
+	  "0x010 PWR_SEND\n"\
+	  "0x020 PWR_SUMMARY\n"\
+	  "0x040 RMS_DISP\n"\
+	  "0x080 RMS_MEASURE\n"\
+	  "0x100 BUF_RAW\n"\
+	  "0x200 BUF_CALC\n"
+    );
+   ch = query(&getnum, "dbg flag: ");
+   if (ch)
    {
-    ch = query(&getnum, "dbg flag: ");
-    if (ch)
-    {
-     pwrDbg = val;
-    }
+    pwrDbg = val;
    }
-   else if (enable == '0')
-   {
-    pwrDbg = 0;
-   }
-   printf("pwrDbg 0x%02x\n", pwrDbg);
+   printf("pwrDbg 0x%03x\n", pwrDbg);
   }
 
   else if (ch == 'r')		/* *** start here */
@@ -2121,6 +2340,13 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    adcRun();
    break;			/* exit loop to allow console output */
   }
+
+#if defined(ARDUINO_ARCH_STM32)
+  else if (ch == 'Q')
+  {
+   info();
+  }
+#endif	/* ARDUINO_ARCH_STM32 */
 
   else if (ch == 'R')
   {
@@ -2250,6 +2476,79 @@ void currentCmds(void)		/* C in lclcmd for current commands */
     cfg++;
    }
   }
+
+#if defined(ARDUINO_ARCH_STM32)
+  else if (ch == 'I')
+  {
+   static T_PORT_LIST portList[] =
+    {
+     {'a', GPIOA},
+     {'b', GPIOB},
+     {'c', GPIOC},
+//     {'d', GPIOD},
+//     {'e', GPIOE},
+    };
+
+   ch = query("\nPort: ");
+   unsigned int i;
+   P_PORT_LIST p = portList;
+   GPIO_TypeDef *port = 0;
+   for (i = 0; i < sizeof(portList) / sizeof(T_PORT_LIST); i++)
+   {
+    if (ch == p->ch)
+    {
+     port = p->port;
+     putBufChar(ch);
+     break;
+    }
+    p++;
+   }
+
+   if (port != 0)
+   {
+    T_MASK andMask;
+    T_MASK orMask;
+    andMask.val = 0;
+    orMask.val = 0;
+    if (query(&gethex, "\nand mask: "))
+    {
+     andMask.mask = val;
+     andMask.flag = 1;
+    }
+
+    if (query(&gethex, "\nor mask: "))
+    {
+     orMask.mask = val;
+     orMask.flag = 1;
+    }
+
+    if (andMask.flag)
+     port->ODR &= andMask.mask;
+
+    if (orMask.flag)
+     port->ODR |= orMask.mask;
+
+    if (andMask.flag || orMask.flag)
+    {
+     printf("\n");
+     gpioInfo(port);
+     while (1)
+     {
+      printf("done: ");
+      flushBuf();
+      while (dbgRxReady() == 0)	/* while no character */
+       ;
+      ch = dbgRxRead();
+      putBufChar(ch);
+      newline();
+      flushBuf();
+      if (ch == 'y')
+       break;
+     }
+    }
+   }
+  }
+#endif  /* ARDUINO_ARCH_STM32 */
 
 #if 0
   else if (ch == 'd')

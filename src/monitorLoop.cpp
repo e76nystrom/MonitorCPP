@@ -155,6 +155,7 @@ int16_t monitorLoop(void)
  startCnt();
  #endif
 
+#if 0
  clockFreq = HAL_RCC_GetHCLKFreq();
  tmrFreq = HAL_RCC_GetPCLK2Freq();
  printf("clock frequency %u FCY %u\n",
@@ -177,6 +178,7 @@ int16_t monitorLoop(void)
  adcTmrMax(ctr);
 #if 1
  adcTmrCCR(ctr / 2);
+#endif
 #endif
 
 #if PIN_DISPLAY

@@ -265,12 +265,16 @@ EXT P_RMS adc2Rms;
 EXT bool cmdActive;
 EXT int pwrDbg;
 
-#define DBG_PWR_DISPLAY 0x01
-#define DBG_PWR_CALC 0x02
-#define DBG_PWR_SUMMARY 0x04
-#define DBG_RMS_DISPLAY 0x08
-#define DBG_RMS_MEASURE 0x10
-#define DBG_BUFFER 0x20
+#define DBG_PWR_DISPLAY	0x001
+#define DBG_PWR_1M      0x002
+#define DBG_PWR_15M	0x004
+#define DBG_PWR_60M	0x008
+#define DBG_PWR_SEND	0x010
+#define DBG_PWR_SUMMARY 0x020
+#define DBG_RMS_DISPLAY 0x040
+#define DBG_RMS_MEASURE 0x080
+#define DBG_BUF_RAW	0x100
+#define DBG_BUF_CALC	0x200
 
 inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX_VAL);}
 
