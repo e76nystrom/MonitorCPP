@@ -13,7 +13,8 @@
 #define ADC2_0 LL_ADC_CHANNEL_1
 #define ADC2_1 LL_ADC_CHANNEL_3
 
-#if 1
+#define TEST_POWER 0
+#if TEST_POWER
 
 #define MAX_CHAN_POWER 1
 #define MAX_CHAN_RMS 2

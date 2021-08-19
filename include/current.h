@@ -273,8 +273,9 @@ EXT int pwrDbg;
 #define DBG_PWR_SUMMARY 0x020
 #define DBG_RMS_DISPLAY 0x040
 #define DBG_RMS_MEASURE 0x080
-#define DBG_BUF_RAW	0x100
-#define DBG_BUF_CALC	0x200
+#define DBG_RMS_SEND    0x100
+#define DBG_BUF_RAW	0x200
+#define DBG_BUF_CALC	0x400
 
 inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX_VAL);}
 
