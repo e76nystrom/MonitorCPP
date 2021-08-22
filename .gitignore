@@ -53,3 +53,12 @@ Tmp/*
 
 *.pyproj
 *.dat
+
+*.ii
+*.i
+*.ls
+*.map
+*.list
+*.elf
+*.hex
+/Debug/*.s
