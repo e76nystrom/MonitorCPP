@@ -61,4 +61,4 @@ Tmp/*
 *.list
 *.elf
 *.hex
-/Debug/*.s
+Debug/*
