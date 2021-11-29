@@ -64,4 +64,4 @@ Tmp/*
 Debug/*
 /Debug/
 STM32CubeIDE/*
-
+src/stm32Info.cpp
