@@ -7,7 +7,8 @@ CPP_SRCS += \
 ../src/current.cpp \
 ../src/lclcmd.cpp \
 ../src/monitorLoop.cpp \
-../src/serialio.cpp 
+../src/serialio.cpp \
+../src/stm32Info.cpp 
 
 S_UPPER_SRCS += \
 ../src/getSP.S \
@@ -55,6 +56,7 @@ OBJS += \
 ./src/serialio.o \
 ./src/spi.o \
 ./src/startup_stm32f103xb.o \
+./src/stm32Info.o \
 ./src/stm32f1xx_hal_msp.o \
 ./src/stm32f1xx_it.o \
 ./src/system_stm32f1xx.o \
@@ -69,7 +71,8 @@ CPP_DEPS += \
 ./src/current.d \
 ./src/lclcmd.d \
 ./src/monitorLoop.d \
-./src/serialio.d 
+./src/serialio.d \
+./src/stm32Info.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
