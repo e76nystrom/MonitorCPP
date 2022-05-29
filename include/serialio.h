@@ -24,9 +24,6 @@ void newline(void);
 
 /* debug port routines */
 
-char prompt(const char *str);
-char query(const char *format, ...);
-char query(unsigned char (*get)(), const char *format, ...);
 void putx(char c);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
@@ -35,6 +32,25 @@ unsigned char gethex(void);
 char getstr(char *buf, int bufLen);
 unsigned char getnum(void);
 unsigned char getfloat(void);
+
+typedef union s_intFloat
+{
+ int i;
+ float f;
+} T_INT_FLOAT, *P_INT_FLOAT;
+
+unsigned char gethex(int *val);
+unsigned char getnum(int *val);
+unsigned char getnumAll(T_INT_FLOAT *val);
+unsigned char getfloat(float *val);
+
+char query(const char *format, ...);
+char query(unsigned char (*get)(), const char *format, ...);
+char query(unsigned char (*get)(int *), int *val, const char *format, ...);
+char query(unsigned char (*get)(T_INT_FLOAT *), T_INT_FLOAT *val,
+	   const char *format, ...);
+
+char prompt(const char *str);
 
 void prtbuf(unsigned char *p, int size);
 void prtibuf(int16_t *p, int size);

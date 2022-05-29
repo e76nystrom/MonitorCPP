@@ -55,6 +55,10 @@ extern "C" {
 
 /* USER CODE BEGIN EFP */
 
+#if !defined(ARDUINO_ARCH_STM32)
+void Error_Handler(void);
+#endif
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
@@ -89,5 +93,3 @@ extern "C" {
 #endif
 
 #endif /* __MAIN_H */
-
-/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

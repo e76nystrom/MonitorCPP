@@ -11,7 +11,6 @@ CPP_SRCS += \
 ../src/stm32Info.cpp 
 
 S_UPPER_SRCS += \
-../src/getSP.S \
 ../src/startup_stm32f103xb.S 
 
 C_SRCS += \
@@ -46,7 +45,6 @@ OBJS += \
 ./src/adc.o \
 ./src/current.o \
 ./src/dma.o \
-./src/getSP.o \
 ./src/gpio.o \
 ./src/i2c.o \
 ./src/lclcmd.o \
@@ -64,7 +62,6 @@ OBJS += \
 ./src/usart.o 
 
 S_UPPER_DEPS += \
-./src/getSP.d \
 ./src/startup_stm32f103xb.d 
 
 CPP_DEPS += \

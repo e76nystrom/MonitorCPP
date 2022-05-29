@@ -8,10 +8,20 @@ C:/Development/EclipseCPP/LatheCPP/lathe_src/i2cx.cpp \
 C:/Development/EclipseCPP/LatheCPP/lathe_src/lcd.cpp \
 C:/Development/EclipseCPP/LatheCPP/lathe_src/spix.cpp 
 
+S_UPPER_SRCS += \
+C:/Development/EclipseCPP/LatheCPP/lathe_src/exit.S \
+C:/Development/EclipseCPP/LatheCPP/lathe_src/getSP.S 
+
 OBJS += \
+./lathe_src/exit.o \
+./lathe_src/getSP.o \
 ./lathe_src/i2cx.o \
 ./lathe_src/lcd.o \
 ./lathe_src/spix.o 
+
+S_UPPER_DEPS += \
+./lathe_src/exit.d \
+./lathe_src/getSP.d 
 
 CPP_DEPS += \
 ./lathe_src/i2cx.d \
@@ -20,6 +30,20 @@ CPP_DEPS += \
 
 
 # Each subdirectory must supply rules for building sources it contributes
+lathe_src/exit.o: C:/Development/EclipseCPP/LatheCPP/lathe_src/exit.S lathe_src/subdir.mk
+	@echo 'Building file: $<'
+	@echo 'Invoking: Cross ARM GNU Assembler'
+	arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -Og -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-move-loop-invariants -Wall -Wextra  -g3 -x assembler-with-cpp -DDEBUG -DUSE_FULL_ASSERT -DTRACE -DOS_USE_TRACE_ITM -DSTM32F30X -DUSE_STDPERIPH_DRIVER -DHSE_VALUE=8000000 -I"../include" -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" -c -o "$@" "$<"
+	@echo 'Finished building: $<'
+	@echo ' '
+
+lathe_src/getSP.o: C:/Development/EclipseCPP/LatheCPP/lathe_src/getSP.S lathe_src/subdir.mk
+	@echo 'Building file: $<'
+	@echo 'Invoking: Cross ARM GNU Assembler'
+	arm-none-eabi-gcc -mcpu=cortex-m3 -mthumb -Og -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-move-loop-invariants -Wall -Wextra  -g3 -x assembler-with-cpp -DDEBUG -DUSE_FULL_ASSERT -DTRACE -DOS_USE_TRACE_ITM -DSTM32F30X -DUSE_STDPERIPH_DRIVER -DHSE_VALUE=8000000 -I"../include" -MMD -MP -MF"$(@:%.o=%.d)" -MT"$@" -c -o "$@" "$<"
+	@echo 'Finished building: $<'
+	@echo ' '
+
 lathe_src/i2cx.o: C:/Development/EclipseCPP/LatheCPP/lathe_src/i2cx.cpp lathe_src/subdir.mk
 	@echo 'Building file: $<'
 	@echo 'Invoking: Cross ARM GNU C++ Compiler'

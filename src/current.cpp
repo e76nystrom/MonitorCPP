@@ -103,7 +103,7 @@ extern ADC_HandleTypeDef hadc2;
 #if DMA
 extern DMA_HandleTypeDef hdma_adc1;
 #endif	/* DMA */
-#include "dbg.h"
+//#include "dbg.h"
 #endif	/* STM32MON */
 
 #if defined(__CURRENT_INC__)	// <-

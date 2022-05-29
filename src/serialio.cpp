@@ -52,9 +52,6 @@ void newline(void);
 
 /* debug port routines */
 
-char prompt(const char *str);
-char query(const char *format, ...);
-char query(unsigned char (*get)(), const char *format, ...);
 void putx(char c);
 void putstr(const char *p);
 void sndhex(unsigned char *p, int size);
@@ -63,6 +60,25 @@ unsigned char gethex(void);
 char getstr(char *buf, int bufLen);
 unsigned char getnum(void);
 unsigned char getfloat(void);
+
+typedef union s_intFloat
+{
+ int i;
+ float f;
+} T_INT_FLOAT, *P_INT_FLOAT;
+
+unsigned char gethex(int *val);
+unsigned char getnum(int *val);
+unsigned char getnumAll(T_INT_FLOAT *val);
+unsigned char getfloat(float *val);
+
+char query(const char *format, ...);
+char query(unsigned char (*get)(), const char *format, ...);
+char query(unsigned char (*get)(int *), int *val, const char *format, ...);
+char query(unsigned char (*get)(T_INT_FLOAT *), T_INT_FLOAT *val,
+	   const char *format, ...);
+
+char prompt(const char *str);
 
 void prtbuf(unsigned char *p, int size);
 void prtibuf(int16_t *p, int size);
@@ -599,6 +615,191 @@ unsigned char getfloat(void)
  return(0);
 }
 
+unsigned char gethex(int *val)
+{
+ char ch;
+ int count;
+
+ int tmpVal = 0;
+ count = 0;
+ while (count <= 8)
+ {
+  ch = getx();
+  if ((ch >= '0')
+  &&  (ch <= '9'))
+  {
+   putBufChar(ch);
+   ch -= '0';
+   count++;
+  }
+  else if ((ch >= 'a')
+  &&       (ch <= 'f'))
+  {
+   putBufChar(ch);
+   ch -= 'a' - 10;
+   count++;
+  }
+  else if ((ch == 8)
+       ||  (ch == 127))
+  {
+   if (count > 0)
+   {
+    --count;
+    tmpVal >>= 4;
+    putBufChar(8);
+    putBufChar(' ');
+    putBufChar(8);
+   }
+  }
+  else if (ch == ' ')
+  {
+   putBufChar(ch);
+   break;
+  }
+  else if (ch == '\r')
+   break;
+  else
+   continue;
+  tmpVal <<= 4;
+  tmpVal += ch;
+ }
+ *val = tmpVal;
+ return(count != 0);
+}
+
+unsigned char getnum(int *val)
+{
+ char ch;			/* input character */
+ char chbuf[MAXDIG];		/* input digit buffer */
+ unsigned char chidx;		/* input character index */
+ unsigned char count;		/* input character count */
+ char neg;			/* negative flag */
+ char hex;			/* hex flag */
+
+ neg = 0;
+ hex = 0;
+ int tmpVal = 0;
+ chidx = 0;
+ count = 0;
+ while (true)
+ {
+  ch = getx();
+  if ((ch >= '0')
+  &&  (ch <= '9'))
+  {
+   if (chidx < MAXDIG)
+   {
+    putBufChar(ch);
+    chbuf[chidx] = ch - '0';
+    chidx++;
+   }
+  }
+  else if ((ch >= 'a')
+  &&       (ch <= 'f'))
+  {
+   if (chidx < MAXDIG)
+   {
+    hex = 1;
+    putBufChar(ch);
+    chbuf[chidx] = ch - 'a' + 10;
+    chidx++;
+   }
+  }
+  else if ((ch == 8)
+       ||  (ch == 127))
+  {
+   if (chidx > 0)
+   {
+    --chidx;
+    putBufChar(8);
+    putBufChar(' ');
+    putBufChar(8);
+   }
+  }
+  else if ((ch == '\r')
+       ||  (ch == ' '))
+  {
+   if (hex)
+   {
+    while (count < chidx)
+    {
+     tmpVal = (tmpVal << 4) + chbuf[count];
+     count++;
+    }
+   }
+   else
+   {
+    while (count < chidx)
+    {
+     tmpVal = tmpVal * 10 + chbuf[count];
+     count++;
+    }
+   }
+   if (neg)
+    tmpVal = -tmpVal;
+   *val = tmpVal;
+   return(count);
+  }
+  else if (chidx == 0)
+  {
+   if (ch == '-')
+   {
+    putBufChar(ch);
+    neg = 1;
+   }
+   else if (ch == 'x')
+   {
+    putBufChar(ch);
+    hex = 1;
+   }
+  }
+  else
+   printf("%d ", ch);
+ }
+}
+
+unsigned char getfloat(float *val)
+{
+ char chbuf[MAXDIG];		/* input digit buffer */
+
+ char len = getstr(chbuf, sizeof(chbuf));
+ if (len != 0)
+ {
+  *val = strtof((const char *) chbuf, nullptr);
+  return(1);
+ }
+ return(0);
+}
+
+unsigned char getnumAll(T_INT_FLOAT *val)
+{
+ char chbuf[MAXDIG];		/* input digit buffer */
+
+ char len = getstr(chbuf, sizeof(chbuf));
+ if (len != 0)
+ {
+  char *p = chbuf;
+  int i;
+  for (i = 0; i < len; i++)
+  {
+   char ch = *p++;
+   if (ch == '.')
+   {
+    val->f = strtof((const char *) chbuf, nullptr);
+    return(FLOAT_VAL);
+   }
+   if ((ch == 'x') || (ch == 'X'))
+   {
+    val->i = strtol(p, nullptr, 16);
+    return(INT_VAL);
+   }
+  }
+  val->i = strtol((const char *) chbuf, nullptr, 10);
+  return(INT_VAL);
+ }
+ return(NO_VAL);
+}
+
 char query(const char *format, ...)
 {
  va_list args;
@@ -620,6 +821,31 @@ char query(unsigned char (*get)(), const char *format, ...)
  va_end(args);
  flushBuf();
  char ch = get();
+ newline();
+ return(ch);
+}
+
+char query(unsigned char (*get)(int *), int *val, const char *format, ...)
+{
+ va_list args;
+ va_start(args, format);
+ vprintf(format, args);
+ va_end(args);
+ flushBuf();
+ char ch = get(val);
+ newline();
+ return(ch);
+}
+
+char query(unsigned char (*get)(T_INT_FLOAT *), T_INT_FLOAT *val,
+	   const char *format, ...)
+{
+ va_list args;
+ va_start(args, format);
+ vprintf(format, args);
+ va_end(args);
+ flushBuf();
+ char ch = get(val);
  newline();
  return(ch);
 }
