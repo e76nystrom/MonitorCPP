@@ -201,6 +201,8 @@ void SystemClock_Config(void)
 
 /* USER CODE BEGIN 4 */
 
+#if 0
+
 void _kill(void);
 void _getpid(void);
 
@@ -259,6 +261,8 @@ void _kill(void)
 void _getpid(void)
 {
 }
+
+#endif
 
 /* USER CODE END 4 */
 
