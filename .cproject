@@ -74,7 +74,6 @@
 									<listOptionValue builtIn="false" value="USE_FULL_ASSERT"/>
 									<listOptionValue builtIn="false" value="TRACE"/>
 									<listOptionValue builtIn="false" value="OS_USE_TRACE_ITM"/>
-									<listOptionValue builtIn="false" value="STM32F30X"/>
 									<listOptionValue builtIn="false" value="USE_STDPERIPH_DRIVER"/>
 									<listOptionValue builtIn="false" value="HSE_VALUE=8000000"/>
 									<listOptionValue builtIn="false" value="STM32F103xB"/>
@@ -106,7 +105,6 @@
 									<listOptionValue builtIn="false" value="USE_FULL_ASSERT"/>
 									<listOptionValue builtIn="false" value="TRACE"/>
 									<listOptionValue builtIn="false" value="OS_USE_TRACE_ITM"/>
-									<listOptionValue builtIn="false" value="STM32F30X"/>
 									<listOptionValue builtIn="false" value="USE_STDPERIPH_DRIVER"/>
 									<listOptionValue builtIn="false" value="HSE_VALUE=8000000"/>
 									<listOptionValue builtIn="false" value="STM32F103xB"/>
@@ -171,8 +169,8 @@
 						</toolChain>
 					</folderInfo>
 					<sourceEntries>
-						<entry excluding="cmake-build-debug|Src|lathe_src/stm32Info.cpp|STM32CubeIDE|lathe_src/remfunc.cpp|lathe_src/arc.cpp|lathe_src/zcontrol.cpp|lathe_src/xcontrol.cpp|lathe_src/serialio.cpp|lathe_src/remvar.cpp|lathe_src/remcmd.cpp|lathe_src/pidAutoTune.cpp|lathe_src/pid.cpp|lathe_src/mainLoop.cpp|lathe_src/lclcmdX.cpp|lathe_src/lclcmd.cpp|lathe_src/latheX.cpp|lathe_src/lathe.cpp|lathe_src/interrupts.cpp|lathe_src/handler.S|lathe_src/encoder.cpp|Tmp|monitor|monitor/wifi.cpp|monitor/TimerThree.cpp|monitor/stm32f1tim.c|monitor/stm32f1gpio.c|monitor/stm32f1dma.c|monitor/stm32f1adc.c|monitor/printf.cpp|monitor/ntp.cpp|monitor/monitor.cpp|monitor/getSP.S|monitor/dns.cpp|monitor/DHT.cpp|monitor/current.cpp|monitor/CRC32.cpp|Tmp/main.c|arduino/stm32f1tim.c|arduino/stm32f1gpio.c|arduino/stm32f1dma.c|arduino/stm32f1adc.c|arduino/DHT.cpp|arduino/wifi.cpp|arduino/TimerThree.cpp|arduino/printf.cpp|arduino/ntp.cpp|arduino/monitor.cpp|arduino/getSP.S|arduino/dns.cpp|arduino/CRC32.cpp|main.c|monitorSrc|Monitor|Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/system_stm32f1xx.c|system|TrueSTUDIO|src" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name=""/>
-						<entry excluding="sysmem.c|syscalls.c" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="Src"/>
+						<entry excluding="build|cmake-build-debug|Src|STM32CubeIDE|lathe_src/remfunc.cpp|lathe_src/arc.cpp|lathe_src/zcontrol.cpp|lathe_src/xcontrol.cpp|lathe_src/serialio.cpp|lathe_src/remvar.cpp|lathe_src/remcmd.cpp|lathe_src/pidAutoTune.cpp|lathe_src/pid.cpp|lathe_src/mainLoop.cpp|lathe_src/lclcmdX.cpp|lathe_src/lclcmd.cpp|lathe_src/latheX.cpp|lathe_src/lathe.cpp|lathe_src/interrupts.cpp|lathe_src/handler.S|lathe_src/encoder.cpp|Tmp|monitor|monitor/wifi.cpp|monitor/TimerThree.cpp|monitor/stm32f1tim.c|monitor/stm32f1gpio.c|monitor/stm32f1dma.c|monitor/stm32f1adc.c|monitor/printf.cpp|monitor/ntp.cpp|monitor/monitor.cpp|monitor/getSP.S|monitor/dns.cpp|monitor/DHT.cpp|monitor/current.cpp|monitor/CRC32.cpp|Tmp/main.c|arduino/stm32f1tim.c|arduino/stm32f1gpio.c|arduino/stm32f1dma.c|arduino/stm32f1adc.c|arduino/DHT.cpp|arduino/wifi.cpp|arduino/TimerThree.cpp|arduino/printf.cpp|arduino/ntp.cpp|arduino/monitor.cpp|arduino/getSP.S|arduino/dns.cpp|arduino/CRC32.cpp|main.c|monitorSrc|Monitor|Drivers/CMSIS/Device/ST/STM32F1xx/Source/Templates/system_stm32f1xx.c|system|TrueSTUDIO|src" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name=""/>
+						<entry excluding="monitor.cpp|stm32Info.cpp|Time.cpp|sysmem.c|syscalls.c" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="Src"/>
 						<entry excluding="spix.cpp|lcd.cpp|i2cx.cpp|stm32Info.cpp|stm32f1spi.c|stm32f1i2c.c|stm32f1tim.c|stm32f1gpio.c|stm32f1dma.c|stm32f1adc.c|current.cpp|wifi.cpp|TimerThree.cpp|printf.cpp|ntp.cpp|monitor.cpp|getSP.S|dns.cpp|DHT.cpp|CRC32.cpp" flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="monitor"/>
 					</sourceEntries>
 				</configuration>
