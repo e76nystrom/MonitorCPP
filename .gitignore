@@ -48,7 +48,6 @@ Tmp/*
 *.bak
 *.csv
 *.xlsx
-*.txt
 *.lst
 
 *.pyproj
