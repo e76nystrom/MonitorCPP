@@ -26,7 +26,7 @@
 #define MAX_CHAN_RMS 1
 #define MAX_CHAN (MAX_CHAN_POWER + MAX_CHAN_RMS)
 
-#endif	/* 0 */
+#endif	/* TEST_POWER */
 
 #include "pinDef.h"
 #endif	/* __CONFIG_H__ */

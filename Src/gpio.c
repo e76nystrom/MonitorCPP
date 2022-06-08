@@ -23,6 +23,8 @@
 
 /* USER CODE BEGIN 0 */
 
+#if defined(ARDUINO_BLUEPILL_F103C8)
+
 /* USER CODE END 0 */
 
 /*----------------------------------------------------------------------------*/
@@ -97,5 +99,7 @@ void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 2 */
+
+#endif	/* ARDUINO_BLUEPILL_FO13C8 */
 
 /* USER CODE END 2 */

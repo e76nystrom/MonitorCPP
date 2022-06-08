@@ -48,6 +48,8 @@ extern "C" {
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
+#if !defined(ARDUINO_ARCH_STM32)
+
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -55,9 +57,9 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
-#if !defined(ARDUINO_ARCH_STM32)
-void Error_Handler(void);
 #endif
+
+#if defined(ARDUINO_BLUEPILL_F103C8)
 
 /* USER CODE END EFP */
 
@@ -85,6 +87,17 @@ void Error_Handler(void);
 #define Dbg3_Pin GPIO_PIN_9
 #define Dbg3_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
+
+#else
+
+#undef __MAIN_H
+#if defined(ARDUINO_ARCH_STM32)
+#include "mainN.h"
+#else
+#include "../../MonitorCPPN/Inc/main.h"
+#endif  /* ARDUINO_ARCH_STM32 */
+
+#endif	 /* ARDUINO_BLUEPILL_F103C8 */
 
 /* USER CODE END Private defines */
 
