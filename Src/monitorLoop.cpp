@@ -247,8 +247,26 @@ int16_t monitorLoop(void)
  ledUpdTime = millis();
  ledSet();
 
+#if defined(SPI_SEL_Pin)
  SPI_SEL_GPIO_Port->BSRR = SPI_SEL_Pin; /* disable spi select */
+#endif	/* SPI_SEL_Pin */
 
+#if defined(CS0_Pin)
+ CS0_GPIO_Port->BSRR = CS0_Pin; /* disable spi select */
+#endif	/* CS0_Pin */
+
+#if defined(CS1_Pin)
+ CS1_GPIO_Port->BSRR = CS0_Pin; /* disable spi select */
+#endif	/* CS1_Pin */
+
+#if defined(CS2_Pin)
+ CS2_GPIO_Port->BSRR = CS0_Pin; /* disable spi select */
+#endif	/* CS2_Pin */
+
+#if defined(CS3_Pin)
+ CS3_GPIO_Port->BSRR = CS0_Pin; /* disable spi select */
+#endif	/* CS3_Pin */
+ 
  while (1)			/* main loop */
  {
   newline();

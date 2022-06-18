@@ -52,6 +52,7 @@ Tmp/*
 
 *.pyproj
 *.dat
+#.*
 
 *.ii
 *.i
@@ -65,6 +66,10 @@ STM32CubeIDE/*
 src/stm32Info.cpp
 .idea/*
 cmake-build-debug/*
+cmake-build-mega2560/*
+
 /build/*
+/Debug/*
+LICENSE.txt
 
 /Debug/
