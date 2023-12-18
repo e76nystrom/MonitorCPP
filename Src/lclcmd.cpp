@@ -18,6 +18,7 @@
 #include "serialio.h"
 #include "current.h"
 #include "cyclectr.h"
+#include "stm32Info.h"
 
 #include "i2c.h"
 
@@ -128,12 +129,17 @@ bool setRtcCnt(int val)
  return(false);
 }
 
+void bitState(const char *s, volatile const uint32_t *p, uint32_t mask)
+{
+ printf("%s %c\n", s, ((*p & mask) == 0) ? '0' : '1');
+}
+
 void switchRTC(void)
 {
  newline();
  bool err = false;
  uint32_t t0;
- bitState("RCC_APB1ENR_PWREN", &RCC->APB1ENR, RCC_APB1ENR_PWREN);
+ bitState((const char *) "RCC_APB1ENR_PWREN", (unsigned long volatile *) &RCC->APB1ENR, (unsigned long) RCC_APB1ENR_PWREN);
  flushBuf();
  if ((RCC->APB1ENR & RCC_APB1ENR_PWREN) == 0)
  {
@@ -143,7 +149,7 @@ void switchRTC(void)
   (void) tmpreg;
  }
 
- bitState("PWR_CR_DBP", &PWR->CR, PWR_CR_DBP);
+ //bitState("PWR_CR_DBP", &PWR->CR, PWR_CR_DBP);
  flushBuf();
  if ((PWR->CR & PWR_CR_DBP) == 0)
  {
@@ -172,10 +178,10 @@ void switchRTC(void)
   RCC->BDCR = tmp;
   printf("BDCR %08x\n", (unsigned int) RCC->BDCR);
 
-  bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
+  //bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
   flushBuf();
   RCC->BDCR |= RCC_BDCR_LSEON;
-  bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
+  //bitState("RCC_BDCR_LSEON", &RCC->BDCR, RCC_BDCR_LSEON);
   flushBuf();
   t0 = millis();
   while ((RCC->BDCR & RCC_BDCR_LSERDY) == 0)
@@ -425,15 +431,15 @@ void lclcmd(int ch)
 
   while (1)
   {
-   if (query(&getnum, "\nreg "))
+   if (query(&getNum, "\nreg "))
     reg = val;
    else
     break;
 
-   if (query(&getnum, "mask "))
+   if (query(&getNum, "mask "))
     mask = val;
 
-   if (query(&getnum, "invert "))
+   if (query(&getNum, "invert "))
     invert = val != 0;
 
    int set = (((reg & mask) != 0) ^ invert);
@@ -445,7 +451,7 @@ void lclcmd(int ch)
  }
  else if (ch == 'F')
  {
-  if (query(&getnum, "IRQn: "))
+  if (query(&getNum, "IRQn: "))
   {
    HAL_NVIC_EnableIRQ((IRQn_Type) val);
   }
@@ -594,7 +600,7 @@ void lclcmd(int ch)
 #if 0
  else if (ch == 'p')
  {
-  if (query(&getnum, ' '))
+  if (query(&getNum, ' '))
   {
    print = val;
   }

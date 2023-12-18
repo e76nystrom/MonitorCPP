@@ -1,4 +1,5 @@
-#if 1	// <-
+#if !defined(LCLCMD_INC)	// <-
+#define LCLCMD_INC
 
 #if !defined(EXT)
 #define EXT extern
@@ -12,4 +13,4 @@ void bkpInfo(void);
 void rtcInfo(void);
 #endif	/* 0 */
 
-#endif	// ->
+#endif  /* LCLCMD_INC */	// ->

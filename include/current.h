@@ -1,4 +1,5 @@
-#if 1	// <-
+#if !defined(CURRENT_INC)	// <-
+#define CURRENT_INC
 #if !defined(__CURRENT_INC__)
 #define __CURRENT_INC__
 
@@ -411,4 +412,4 @@ unsigned int millis(void);
 #endif	/* ARDUINO_ARCH_AVR */
  
 #endif	/* __CURRENT_INC__ */
-#endif /* __CURRENT_INC__ */	// ->
+#endif  /* CURRENT_INC */	// ->

@@ -1,4 +1,5 @@
-#if 1	// <-
+#if !defined(SERIALIO_INC)	// <-
+#define SERIALIO_INC
 
 #include <config.h>
 #include "dbg.h"
@@ -30,7 +31,7 @@ void sndhex(unsigned char *p, int size);
 char getx(void);
 unsigned char gethex(void);
 char getstr(char *buf, int bufLen);
-unsigned char getnum(void);
+unsigned char getNum(void);
 unsigned char getfloat(void);
 
 typedef union s_intFloat
@@ -40,7 +41,7 @@ typedef union s_intFloat
 } T_INT_FLOAT, *P_INT_FLOAT;
 
 unsigned char gethex(int *val);
-unsigned char getnum(int *val);
+unsigned char getNum(int *val);
 unsigned char getnumAll(T_INT_FLOAT *val);
 unsigned char getfloat(float *val);
 
@@ -292,4 +293,4 @@ EXT int isrCount;
 EXT unsigned int isrOverflow;
 EXT char isrBuf[ISR_BUF_SIZE];
 
-#endif	// ->
+#endif  /* SERIALIO_INC */	// ->

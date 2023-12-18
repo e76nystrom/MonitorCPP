@@ -522,10 +522,8 @@ unsigned int millis(void);
 #endif /* __CURRENT_INC__ */	// ->
 #ifdef __CURRENT__
 
-
 #if defined(ARDUINO_ARCH_STM32)
 unsigned char getNum();
-#define getnum getNum
 extern int val;
 
 void putx(char ch);
@@ -2417,7 +2415,7 @@ void currentCmds(void)		/* C in lclcmd for current commands */
 	  "0x200 BUF_RAW\n"\
 	  "0x400 BUF_CALC\n"
     );
-   ch = query(&getnum, "dbg flag: ");
+   ch = query(&getNum, "dbg flag: ");
    if (ch)
    {
     pwrDbg = val;
@@ -2648,10 +2646,10 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    int value = 0;
    int scale = 0;
    char buf[32];
-   while (query(&getnum, "val [%d]: ", value))
+   while (query(&getNum, "val [%d]: ", value))
    {
     value = val;
-    if (query(&getnum, "scale [%d]: ", scale))
+    if (query(&getNum, "scale [%d]: ", scale))
      scale = val;
     printf("value %d scale %d fmt %s\n", value, scale,
 	   fmtScaled(buf, sizeof(buf), value, scale));

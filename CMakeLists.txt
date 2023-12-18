@@ -31,6 +31,7 @@ set(CMAKE_C_STANDARD 11)
 
 add_compile_options(-mcpu=Cortex-m3 -mthumb -mthumb-interwork)
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
+add_compile_options(--save-temps)
 
 # uncomment to mitigate c++17 absolute addresses warnings
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-register")
@@ -54,17 +55,23 @@ endif ()
 
 #include_directories()
 include_directories(
-Inc
-include
-Drivers/STM32F1xx_HAL_Driver/Inc
-Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
-Drivers/CMSIS/Device/ST/STM32F1xx/Include
-Drivers/CMSIS/Include
-../LatheCPP/include
-../../Arduino/monitor/src)
+        Inc
+        include
+        Drivers/CMSIS/Include
+        Drivers/STM32F1xx_HAL_Driver/Inc
+        Drivers/CMSIS/Device/ST/STM32F1xx/Include
+        ../../Arduino/monitor/src
+        ../LatheCPP/include
+)
 
-add_definitions()
-add_definitions(-DSTM32F103xB -DSTM32F1 -DSTM32MON -DUSE_FUL_LL_DRIVER)
+add_definitions(
+        -DDEBUG
+        -DSTM32F103xB
+        -DSTM32F1
+        -DSTM32MON
+        -DUSE_FUL_LL_DRIVER
+        -DARDUINO_BLUEPILL_F103C8
+)
 
 #file(GLOB_RECURSE SOURCES )
 file(GLOB_RECURSE SOURCES "Startup/*.*" "Drivers/*.*")
@@ -100,9 +107,10 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F103CBTX_FLASH.ld)
 
 add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map)
 add_link_options(-mcpu=Cortex-m3 -mthumb -mthumb-interwork)
+add_link_options(-Wl,--no-warn-rwx-segments)
 add_link_options(-T ${LINKER_SCRIPT})
 
-add_executable(${PROJECT_NAME}.elf ${SOURCES} ${SOURCES1} ${LINKER_SCRIPT})
+add_executable(${PROJECT_NAME}.elf ${SOURCES1} ${SOURCES} ${LINKER_SCRIPT})
 
 if(INTERMEDIATE)
 foreach(SRC_ IN LISTS SOURCES1)

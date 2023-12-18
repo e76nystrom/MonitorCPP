@@ -58,7 +58,7 @@ void sndhex(unsigned char *p, int size);
 char getx(void);
 unsigned char gethex(void);
 char getstr(char *buf, int bufLen);
-unsigned char getnum(void);
+unsigned char getNum(void);
 unsigned char getfloat(void);
 
 typedef union s_intFloat
@@ -68,7 +68,7 @@ typedef union s_intFloat
 } T_INT_FLOAT, *P_INT_FLOAT;
 
 unsigned char gethex(int *val);
-unsigned char getnum(int *val);
+unsigned char getNum(int *val);
 unsigned char getnumAll(T_INT_FLOAT *val);
 unsigned char getfloat(float *val);
 
@@ -512,7 +512,7 @@ char getstr(char *buf,  int bufLen)
  return(len);
 }
 
-unsigned char getnum(void)
+unsigned char getNum(void)
 {
  char ch;			/* input character */
  char chbuf[MAXDIG];		/* input digit buffer */
@@ -667,7 +667,7 @@ unsigned char gethex(int *val)
  return(count != 0);
 }
 
-unsigned char getnum(int *val)
+unsigned char getNum(int *val)
 {
  char ch;			/* input character */
  char chbuf[MAXDIG];		/* input digit buffer */

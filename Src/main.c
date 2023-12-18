@@ -85,6 +85,8 @@ void SystemClock_Config(void);
 
 void monitorLoop(void);
 
+#include <sys/types.h>
+
 void _init(void);
 caddr_t _sbrk(int incr);
 void _close(void);
