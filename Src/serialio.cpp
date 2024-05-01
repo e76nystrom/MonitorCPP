@@ -10,6 +10,9 @@
 #if defined(STM32F4)
 #include "stm32f4xx_hal.h"
 #endif
+#if defined(STM32L4)
+#include "stm32l4xx_hal.h"
+#endif
 
 #include <stdio.h>
 #include <stdint.h>
@@ -22,7 +25,7 @@
 #undef EXT
 #endif
 
-#define EXT
+#define EXT extern
 #include "serialio.h"
 #endif
 
@@ -138,7 +141,7 @@ write (int handle, char *buffer, int len);
 extern "C" ssize_t _write (int fd, const char* buf, size_t nbyte);
 
 EXT unsigned char *p;
-EXT int32_t val;
+EXT int32_t numVal;
 EXT float fVal;
 
 EXT int32_t valRem;
@@ -247,9 +250,76 @@ inline void dbgTxIntDis()
 }
 #endif
 
+#if defined(STM32F4)
+
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->SR & USART_SR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->DR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->SR & USART_SR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->SR & USART_SR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->DR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+
+#endif	/* STM32F4 */
+
+#if defined(STM32L4)
+
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->ISR & USART_ISR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->RDR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->ISR & USART_ISR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->ISR & USART_ISR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->TDR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+
+#endif	/* STM32L4 */
+
 /* debug port macros */
 
-#define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
+//#define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
+#define PUTX(c) while (dbgTxEmpty() == 0); dbgTxSend(c)
 #define SNDHEX(val) sndhex((unsigned char *) &val, sizeof(val))
 
 #if DBGMSG
@@ -331,6 +401,7 @@ void newline(void)
  {
   putBufChar('\n');
   putBufChar('\r');
+  flushBuf();
  }
  else
  {
@@ -341,9 +412,11 @@ void newline(void)
 
 void putx(char c)
 {
- while ((DBGPORT->SR & USART_SR_TXE) == 0)
+// while ((DBGPORT->SR & USART_SR_TXE) == 0)
+ while (dbgTxEmpty() == 0)
   ;
- DBGPORT->DR = c;
+// DBGPORT->DR = c;
+ dbgTxSend(c);
 }
 
 void putstr(const char *p)
@@ -411,12 +484,16 @@ void powerUpdate(void);
 
 char getx(void)
 {
- while ((DBGPORT->SR & USART_SR_RXNE) == 0)
+// while ((DBGPORT->SR & USART_SR_RXNE) == 0)
+ while (dbgRxReady() == 0)
  {
   pollBufChar();
+#if defined(STM32MON)
   powerUpdate();
+#endif  /* STM32MON */
  }
- return(DBGPORT->DR);
+// return(DBGPORT->DR);
+ return(dbgRxRead());
 }
 
 unsigned char gethex(void)
@@ -424,7 +501,7 @@ unsigned char gethex(void)
  char ch;
  int count;
 
- val = 0;
+ numVal = 0;
  count = 0;
  while (count <= 8)
  {
@@ -449,7 +526,7 @@ unsigned char gethex(void)
    if (count > 0)
    {
     --count;
-    val >>= 4;
+    numVal >>= 4;
     putBufChar(8);
     putBufChar(' ');
     putBufChar(8);
@@ -464,8 +541,8 @@ unsigned char gethex(void)
    break;
   else
    continue;
-  val <<= 4;
-  val += ch;
+  numVal <<= 4;
+  numVal += ch;
  }
  return(count != 0);
 }
@@ -523,7 +600,7 @@ unsigned char getNum(void)
 
  neg = 0;
  hex = 0;
- val = 0;
+ numVal = 0;
  chidx = 0;
  count = 0;
  while (1)
@@ -568,7 +645,7 @@ unsigned char getNum(void)
    {
     while (count < chidx)
     {
-     val = (val << 4) + chbuf[count];
+     numVal = (numVal << 4) + chbuf[count];
      count++;
     }
    }
@@ -576,12 +653,12 @@ unsigned char getNum(void)
    {
     while (count < chidx)
     {
-     val = val * 10 + chbuf[count];
+     numVal = numVal * 10 + chbuf[count];
      count++;
     }
    }
    if (neg)
-    val = -val;
+    numVal = -numVal;
    return(count);
   }
   else if (chidx == 0)
@@ -925,6 +1002,7 @@ void putstr1(const char *p)
   putx1(ch);
   if (ch == '\n')
    putx1('\r');
+
  }
 }
 
@@ -960,9 +1038,11 @@ void sndhex1(unsigned char *p, int size)
 char getx1(void);
 char getx1(void)
 {
- while ((REMPORT->SR & USART_SR_RXNE) == 0)
+// while ((REMPORT->SR & USART_SR_RXNE) == 0)
+ while (dbgRxReady() == 0)
   pollBufChar();
- return(REMPORT->DR);
+// return(REMPORT->DR);
+ return(dbgRxRead());
 }
 
 char getstr1(char *buf, int bufLen)
@@ -1466,7 +1546,8 @@ int pollBufChar(void)
 // if (setupDone)
 //  wdUpdate();
 
- if ((DBGPORT->SR & USART_SR_TXE) != 0)
+// if ((DBGPORT->SR & USART_SR_TXE) != 0)
+ if (dbgTxEmpty() != 0)
  {
   if (lineStart)
   {
@@ -1475,7 +1556,8 @@ int pollBufChar(void)
    case 1:
     if (isrCount != 0)
     {
-     DBGPORT->DR = '*';
+//     DBGPORT->DR = '*';
+     dbgTxSend('*');
      lineStart = 2;
     }
     else
@@ -1485,7 +1567,8 @@ int pollBufChar(void)
    case 2:
     if (isrCount > 0)
     {
-     DBGPORT->DR = isrBuf[isrEmp];
+//     DBGPORT->DR = isrBuf[isrEmp];
+     dbgTxSend(isrBuf[isrEmp]);
      isrEmp++;
      if (isrEmp >= ISR_BUF_SIZE)
       isrEmp = 0;
@@ -1498,13 +1581,18 @@ int pollBufChar(void)
     break;
 
    case 3:
-     DBGPORT->DR = '\n';
+//     DBGPORT->DR = '\n';
+     dbgTxSend('\n');
      lineStart = 4;
      break;
 
    case 4:
-     DBGPORT->DR = '\r';
+//     DBGPORT->DR = '\r';
+     dbgTxSend('\r');
      lineStart = 0;
+     break;
+
+    default:
      break;
    }
   }
@@ -1516,7 +1604,8 @@ int pollBufChar(void)
     --charCount;
      __enable_irq();
     char ch = charBuf[charEmp];
-    DBGPORT->DR = ch;
+//    DBGPORT->DR = ch;
+    dbgTxSend(ch);
     if (ch == '\r')
      eolFlag = 1;
     else

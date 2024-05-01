@@ -35,9 +35,13 @@ void adcInfo(ADC_TypeDef *adc, char n);
 void bkpInfo();
 void afioInfo();
 void rtcInfo();
-#if defined(STM32F1)
+#if defined(STM32F1) || defined(STM32F3) || defined(STM32L4)
 void dmaInfo(DMA_TypeDef *dma);
 void dmaChannelInfo(DMA_Channel_TypeDef *dmaC, char n);
+#endif
+#if defined(STM32F4)
+void dmaInfo(DMA_TypeDef *dma, int n);
+void dmaStreamInfo(DMA_Stream_TypeDef *dmaS, int n, int s);
 #endif
 
 enum tmrFlags

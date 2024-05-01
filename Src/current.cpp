@@ -2418,7 +2418,7 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    ch = query(&getNum, "dbg flag: ");
    if (ch)
    {
-    pwrDbg = val;
+    pwrDbg = numVal;
    }
    printf("pwrDbg 0x%03x\n", pwrDbg);
   }
@@ -2648,9 +2648,9 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    char buf[32];
    while (query(&getNum, "val [%d]: ", value))
    {
-    value = val;
+    value = numVal;
     if (query(&getNum, "scale [%d]: ", scale))
-     scale = val;
+     scale = numVal;
     printf("value %d scale %d fmt %s\n", value, scale,
 	   fmtScaled(buf, sizeof(buf), value, scale));
    }

@@ -432,15 +432,15 @@ void lclcmd(int ch)
   while (1)
   {
    if (query(&getNum, "\nreg "))
-    reg = val;
+    reg = numVal;
    else
     break;
 
    if (query(&getNum, "mask "))
-    mask = val;
+    mask = numVal;
 
    if (query(&getNum, "invert "))
-    invert = val != 0;
+    invert = numVal != 0;
 
    int set = (((reg & mask) != 0) ^ invert);
    int clr = (((reg & mask) == 0) ^ invert);
@@ -453,7 +453,7 @@ void lclcmd(int ch)
  {
   if (query(&getNum, "IRQn: "))
   {
-   HAL_NVIC_EnableIRQ((IRQn_Type) val);
+   HAL_NVIC_EnableIRQ((IRQn_Type) numVal);
   }
  }
  else if (ch == 'I')
@@ -495,12 +495,12 @@ void lclcmd(int ch)
    orMask.val = 0;
    if (query(&gethex, "\nand mask: "))
    {
-    andMask.mask = val;
+    andMask.mask = numVal;
     andMask.flag = 1;
    }
    if (query(&gethex, "\nor mask: "))
    {
-    orMask.mask = val;
+    orMask.mask = numVal;
     orMask.flag = 1;
    }
    if (andMask.flag)
@@ -567,11 +567,11 @@ void lclcmd(int ch)
   {
    unsigned char *p;
 
-   p = (unsigned char *) (int) val;
+   p = (unsigned char *) (int) numVal;
    if (gethex())
    {
     newline();
-    prtbuf(p, val);
+    prtbuf(p, numVal);
    }
   }
  }
@@ -580,7 +580,7 @@ void lclcmd(int ch)
   putBufChar(' ');
   if (gethex())
   {
-   printf("%x", *(int16_t *) (int) val);
+   printf("%x", *(int16_t *) (int) numVal);
   }
  }
  else if (ch == 'w')
@@ -589,11 +589,11 @@ void lclcmd(int ch)
   if (gethex())
   {
    int16_t *p;
-   p = (int16_t *) (int) val;
+   p = (int16_t *) (int) numVal;
    printf(" %x ", *p);
    if (gethex())
    {
-    *p = val;
+    *p = numVal;
    }
   }
  }
@@ -602,7 +602,7 @@ void lclcmd(int ch)
  {
   if (query(&getNum, ' '))
   {
-   print = val;
+   print = numVal;
   }
  }
 #endif	/* 0 */

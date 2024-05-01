@@ -16,12 +16,14 @@
 #include <math.h>
 #include <limits.h>
 
+#define EXT
 #include "main.h"
 #include "adc.h"
 #include "serialio.h"
 #include "lclcmd.h"
 #include "remcmd.h"
 
+#undef EXT
 #define EXT extern
 #include "current.h"
 #include "i2cx.h"

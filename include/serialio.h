@@ -111,7 +111,7 @@ write (int handle, char *buffer, int len);
 extern "C" ssize_t _write (int fd, const char* buf, size_t nbyte);
 
 EXT unsigned char *p;
-EXT int32_t val;
+EXT int32_t numVal;
 EXT float fVal;
 
 EXT int32_t valRem;
@@ -220,9 +220,76 @@ inline void dbgTxIntDis()
 }
 #endif
 
+#if defined(STM32F4)
+
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->SR & USART_SR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->DR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->SR & USART_SR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->SR & USART_SR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->DR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+
+#endif	/* STM32F4 */
+
+#if defined(STM32L4)
+
+inline uint32_t dbgRxReady()
+{
+ return(DBGPORT->ISR & USART_ISR_RXNE);
+}
+inline uint32_t dbgRxRead()
+{
+ return(DBGPORT->RDR);
+}
+inline uint32_t dbgRxOverrun()
+{
+ return(DBGPORT->ISR & USART_ISR_ORE);
+}
+inline uint32_t dbgTxEmpty()
+{
+ return(DBGPORT->ISR & USART_ISR_TXE);
+}
+inline void dbgTxSend(char ch)
+{
+ DBGPORT->TDR = ch;
+}
+inline void dbgTxIntEna()
+{
+ DBGPORT->CR1 |= USART_CR1_TXEIE; /* enable transmit interrupt */
+}
+inline void dbgTxIntDis()
+{
+ DBGPORT->CR1 &= ~USART_CR1_TXEIE; /* disable transmit interrupt */
+}
+
+#endif	/* STM32L4 */
+
 /* debug port macros */
 
-#define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
+//#define PUTX(c) while ((DBGPORT->SR & USART_SR_TXE) == 0); DBGPORT->DR = c
+#define PUTX(c) while (dbgTxEmpty() == 0); dbgTxSend(c)
 #define SNDHEX(val) sndhex((unsigned char *) &val, sizeof(val))
 
 #if DBGMSG
