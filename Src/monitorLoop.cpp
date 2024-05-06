@@ -190,22 +190,30 @@ int16_t monitorLoop(void)
 #define HAL 1
 
 #if HAL
+
+ HAL_StatusTypeDef status;
+
 #if defined(STM32F1)
- HAL_StatusTypeDef status = HAL_ADCEx_Calibration_Start(&hadc1);
+ status = HAL_ADCEx_Calibration_Start(&hadc1);
 #endif
+
 #if defined(STM32F3)
- HAL_StatusTypeDef status =
-  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
- #endif
+ status =  HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+#endif
+
+ printf("hal calibration status adc 1 %d\n", status);
+
 #if defined(STM32F1)
- printf("calibration status %d\n", status);
  status = HAL_ADCEx_Calibration_Start(&hadc2);
 #endif
+
 #if defined(STM32F3)
  status = HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
 #endif
- printf("calibration status %d\n", status);
- #else
+
+ printf("hal calibration status adc 2 %d\n", status);
+
+#else  /* HAL */
 
  printf("calibration 1\n");
  flushBuf();

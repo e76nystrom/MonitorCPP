@@ -39,6 +39,7 @@
 #endif	/* EXT */
 #define EXT
 
+#include "config.h"
 #include "current.h"
 
 #undef EXT
@@ -64,9 +65,12 @@
 #if MAX_CHAN_POWER > 0
 T_RMSPWR rmsPower[MAX_CHAN_POWER];
 #endif	/* MAX_CHAN_POWER */
+
 #if MAX_CHAN_RMS > 0
 T_RMSCHAN rmsData[MAX_CHAN_RMS];
 #endif	/* MAX_CHAN_RMS */
+
+#define NO_SCALE
 
 /* {type, label, rmsAdc {adc, chan, voltAdc {adc, chan}, rmsAdc, voltAdc, 
    [curScale | rmsScale], voltScale, [pwr | rms]} */
@@ -74,20 +78,41 @@ T_RMSCHAN rmsData[MAX_CHAN_RMS];
 T_CHANCFG chanCfg[MAX_CHAN] =
 {
 #if TEST_POWER
-/* type, label, {cAdc, cChan}, {vAdc, vChan}, cScale, vScale, */
- {POWER_CHAN, 'p', {ADC1, ADC1_0}, {ADC2, ADC2_0}, 30, 0.15119 * VOLT_SCALE,
+ 
+#if defined(NO_SCALE)
+
+/* type,      label,	{cAdc, cChan},	{vAdc, vChan},	cScale, vScale, */
+ {POWER_CHAN, 'p',	{ADC1, ADC1_0}, {ADC2, ADC2_0}, 1,	1,
   /* pwrData */
   (P_RMSPWR) &rmsPower[0]},
 
+/* type,    label,  {cAdc, cChan},  {0, 0}, cScale, 0, cRmsData */
+ {RMS_CHAN, 'c',    {ADC1, ADC1_0}, {0, 0}, 1,	     0, (P_RMSPWR) &rmsData[0]},
+
+/* type,    label, {vAdc, vChan},   {0, 0}, vScale,  0, vRmsData */
+ {RMS_CHAN, 'v',   {ADC2, ADC2_0} , {0, 0}, 1,	     0, (P_RMSPWR) &rmsData[1]},
+ 
+#else  /* NO_SCALE */
+
+/* type,      label,	{cAdc, cChan},	{vAdc, vChan},	cScale, vScale, */
+ {POWER_CHAN, 'p',	{ADC1, ADC1_0}, {ADC2, ADC2_0}, 30,	0.15119 * VOLT_SCALE,
+  /* pwrData */
+  (P_RMSPWR) &rmsPower[0]},
+
+/* type,    label,  {cAdc, cChan},  {0, 0}, cScale, 0, cRmsData */
+ {RMS_CHAN, 'c',    {ADC1, ADC1_0}, {0, 0}, 30,	    0, (P_RMSPWR) &rmsData[0]},
+
+/* type,    label, {vAdc, vChan},   {0, 0}, vScale,		  0, vRmsData */
+ {RMS_CHAN, 'v',   {ADC2, ADC2_0} , {0, 0}, 0.15119 * VOLT_SCALE, 0, (P_RMSPWR) &rmsData[1]},
+ 
+#endif	/* NO_SCALE*/
+ 
+#else  /* TEST_POWER */
+ 
 /* type, label, {cAdc, cChan}, {0, 0}, cScale, 0, cRmsData */
  {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 30, 0, (P_RMSPWR) &rmsData[0]},
 
-/* type, label, {vAdc, vChan}, {0, 0}, vScale, 0, vRmsData */
- {RMS_CHAN, 'v', {ADC2, ADC2_0} , {0, 0}, 0.15119 * VOLT_SCALE, 0, (P_RMSPWR) &rmsData[1]},
-#else
-/* type, label, {cAdc, cChan}, {0, 0}, cScale, 0, cRmsData */
- {RMS_CHAN, 'c', {ADC1, ADC1_0}, {0, 0}, 30, 0, (P_RMSPWR) &rmsData[0]},
-#endif	/* 0 */
+#endif	/* TEST_POWER */
 };
 
 #endif	/* ARDUINO_ARCH_STM32 */
@@ -140,7 +165,7 @@ extern DMA_HandleTypeDef hdma_adc1;
 #define VOLT_SCALE 10		/* voltage scale factor */
 
 #define VREF_1000 3300		/* ref voltage times current scale factor */
-#define VREF_10 33		/* rev voltage time volt scale factor */
+#define VREF_10 33		/* ref voltage time volt scale factor */
 
 #define PWR_INTERVAL 500	/* power update interval */
 
@@ -373,17 +398,18 @@ EXT P_RMS adc2Rms;
 EXT bool cmdActive;
 EXT int pwrDbg;
 
-#define DBG_PWR_DISPLAY	0x001
-#define DBG_PWR_1M      0x002
+#define DBG_PWR_DISPLAY 0x001
+#define DBG_PWR_1M	0x002
 #define DBG_PWR_15M	0x004
 #define DBG_PWR_60M	0x008
 #define DBG_PWR_SEND	0x010
 #define DBG_PWR_SUMMARY 0x020
 #define DBG_RMS_DISPLAY 0x040
 #define DBG_RMS_MEASURE 0x080
-#define DBG_RMS_SEND    0x100
+#define DBG_RMS_SEND	0x100
 #define DBG_BUF_RAW	0x200
 #define DBG_BUF_CALC	0x400
+#define DBG_PWR_SAVE	0x800
 
 inline int scaleAdc(int val) {return((val * VREF_1000) / ADC_MAX_VAL);}
 
@@ -391,6 +417,11 @@ inline int scaleAdc(int val, float scale)
 {
  return((int) (scale * ((val * VREF_1000) / ADC_MAX_VAL)));
 }
+
+#define I64BUF_SIZE 22
+char *i64toa(int64_t val, char *buf);
+char *fmtVal(char *buf, int size, int val, int scale);
+char *fmtScaled(char *buf, int size, int value, int scale);
 
 void rmsTestInit(void);
 void rmsTest(void);
@@ -482,37 +513,37 @@ inline void adcTmrInit() { \
 
 inline void adcTmrBDTR() {TIM1->BDTR |= TIM_BDTR_MOE;}
 
-inline void     adcTmrClrIE()         {TIM1->DIER &= ~TIM_DIER_UIE;}
-inline void     adcTmrSetIE()         {TIM1->DIER |= TIM_DIER_UIE;}
-inline uint16_t adcTmrTstIE()         \
+inline void	adcTmrClrIE()	      {TIM1->DIER &= ~TIM_DIER_UIE;}
+inline void	adcTmrSetIE()	      {TIM1->DIER |= TIM_DIER_UIE;}
+inline uint16_t adcTmrTstIE()	      \
 	{return((TIM1->DIER & TIM_IT_UPDATE) != 0);}
-inline uint16_t adcTmrIF()            \
+inline uint16_t adcTmrIF()	      \
 	{return((TIM1->SR & TIM_FLAG_UPDATE) != 0);}
-inline void     adcTmrClrIF()         {TIM1->SR = ~TIM_SR_UIF;}
-inline void     adcTmrStart()         {TIM1->CR1 |= TIM_CR1_CEN;}
-inline void     adcTmrPulse()         \
+inline void	adcTmrClrIF()	      {TIM1->SR = ~TIM_SR_UIF;}
+inline void	adcTmrStart()	      {TIM1->CR1 |= TIM_CR1_CEN;}
+inline void	adcTmrPulse()	      \
 	{TIM1->CR1 |= (TIM_CR1_OPM | TIM_CR1_CEN);}
-inline void     adcTmrStop()          \
+inline void	adcTmrStop()	      \
 	{TIM1->CR1 &= ~(TIM_CR1_OPM | TIM_CR1_CEN);}
-inline void     adcTmrScl(uint16_t y) {TIM1->PSC = (y);}
-inline uint16_t adcTmrRead()          {return(TIM1->CNT);}
-inline void     adcTmrCntClr()        {TIM1->CNT = 0;}
-inline void     adcTmrCnt(uint16_t x) {TIM1->CNT = (x);}
-inline void     adcTmrMax(uint16_t x) {TIM1->ARR = ((x) - 1);}
-inline void     adcTmrSet(uint16_t x) {TIM1->ARR = (x);}
-inline uint16_t adcTmrMaxRead()       {return(TIM1->ARR);}
+inline void	adcTmrScl(uint16_t y) {TIM1->PSC = (y);}
+inline uint16_t adcTmrRead()	      {return(TIM1->CNT);}
+inline void	adcTmrCntClr()	      {TIM1->CNT = 0;}
+inline void	adcTmrCnt(uint16_t x) {TIM1->CNT = (x);}
+inline void	adcTmrMax(uint16_t x) {TIM1->ARR = ((x) - 1);}
+inline void	adcTmrSet(uint16_t x) {TIM1->ARR = (x);}
+inline uint16_t adcTmrMaxRead()	      {return(TIM1->ARR);}
 
-inline void     adcTmrCCR(uint16_t x) {TIM1->CCR1 = (x);}
-inline void     adcTmrPWMMode()       \
+inline void	adcTmrCCR(uint16_t x) {TIM1->CCR1 = (x);}
+inline void	adcTmrPWMMode()	      \
 	{TIM1->CCMR1 = (TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1M_1);}
-inline void     adcTmrPWMEna()        \
+inline void	adcTmrPWMEna()	      \
 	{adcTmrBDTR(); TIM1->CCER |= TIM_CCER_CC1E;}
-inline void     adcTmrPWMDis()        {TIM1->CCER &= ~TIM_CCER_CC1E;}
-inline uint16_t adcTmrReadCCR()       {return(TIM1->CCR1);}
+inline void	adcTmrPWMDis()	      {TIM1->CCER &= ~TIM_CCER_CC1E;}
+inline uint16_t adcTmrReadCCR()	      {return(TIM1->CCR1);}
 inline uint16_t adcTmrReadCCMR()      {return(TIM1->CCMR1);}
-inline void     adcTmrCC1ClrIF()      {TIM1->SR = ~TIM_SR_CC1IF;}
-inline void     adcTmrCC1ClrIE()      {TIM1->DIER &= ~TIM_DIER_CC1IE;}
-inline void     adcTmrCC1SetIE()      {TIM1->DIER |= TIM_DIER_CC1IE;}
+inline void	adcTmrCC1ClrIF()      {TIM1->SR = ~TIM_SR_CC1IF;}
+inline void	adcTmrCC1ClrIE()      {TIM1->DIER &= ~TIM_DIER_CC1IE;}
+inline void	adcTmrCC1SetIE()      {TIM1->DIER |= TIM_DIER_CC1IE;}
 
 #if !defined(ARDUINO_ARCH_STM32)
 unsigned int millis(void);
@@ -524,7 +555,7 @@ unsigned int millis(void);
 
 #if defined(ARDUINO_ARCH_STM32)
 unsigned char getNum();
-extern int val;
+extern int numVal;
 
 void putx(char ch);
 
@@ -612,7 +643,7 @@ unsigned int millis(void)
 #endif	/* ARDUINO_ARCH_AVR */
 
 #define SAMPLES 16
-uint16_t buf[2 * (SAMPLES + 8)];
+uint16_t adcBuf[2 * (SAMPLES + 8)];
 uint16_t *testPtr;
 int testCount = 0;
 int testSave = 0;
@@ -670,6 +701,25 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
  printf("rmsCfgInit %08x channels %d\n", (unsigned int) cfg, count);
  printf("adc1Rms %08x adc2Rms %08x\n",
 	(unsigned int) &adc1Rms, (unsigned int) &adc2Rms);
+ char convBuf[I64BUF_SIZE];
+ i64toa(0x7fffffffffffffff, convBuf);
+ printf("i64toa %d %s\n", strnlen(convBuf, I64BUF_SIZE), convBuf);
+
+ char buf[34];
+ fmtScaled(buf, sizeof(buf), 1234, 1000000);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 100000);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 10000);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 1000);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 100);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 10);
+ printf("%s\n", buf);
+ fmtScaled(buf, sizeof(buf), 1234, 1);
+ printf("%s\n", buf);
 
  maxChan = count;		/* maximum channel */
  curChan = 0;			/* current channel */
@@ -687,6 +737,8 @@ void rmsCfgInit(P_CHANCFG cfg, int count)
    memset((void *) pwr, 0, sizeof(T_RMSPWR));
    pwr->curScale = (VREF_1000 * cfg->curScale) / (float) ADC_MAX_VAL;
    pwr->voltScale = (VREF_1000 * cfg->voltScale) / (float) ADC_MAX_VAL;
+   printf("%d curScale %7.3f voltScale %7.3f\n",
+	  i, pwr->curScale, pwr->voltScale);
    double pwrScale = (double) (VREF_1000 * VREF_1000);
    pwrScale /= (double) (ADC_MAX_VAL * ADC_MAX_VAL);
    pwrScale *= (double) (cfg->curScale * cfg->voltScale / VOLT_SCALE);
@@ -742,7 +794,7 @@ uint32_t iSqrt(uint32_t a_nInput)
   if (op >= res + one)
   {
    op = op - (res + one);
-   res = res +  2 * one;
+   res = res +	2 * one;
   }
   res >>= 1;
   one >>= 2;
@@ -799,7 +851,7 @@ void powerUpdate()
 
 char *i64toa(int64_t val, char *buf)
 {
- char tmp[34];
+ char tmp[I64BUF_SIZE];
  int count = 0;
  char *p = tmp;
  char *p1 = buf;
@@ -822,6 +874,9 @@ char *i64toa(int64_t val, char *buf)
   while (--count >= 0)
    *p1++ = *--p;
  }
+ else
+  *p1++ = '0';
+
  *p1++ = 0;
  return(buf);
 }
@@ -895,11 +950,11 @@ char *fmtScaled(char *buf, int size, int value, int scale)
  char *p = tmp;
  char *p1 = buf;
 
- int width = 0;
+ int fracDig = 0;
  while (scale >= 10)
  {
   scale /= 10;
-  width += 1;
+  fracDig += 1;
  }
 
  int len = 1;
@@ -917,28 +972,28 @@ char *fmtScaled(char *buf, int size, int value, int scale)
   count += 1;
  }
 
- //printf("count %d width %d\n", count, width);
+ // printf("count %d fracDig %d\n", count, fracDig);
 
- len += (count > width) ? (count + 1) : (width + 2);
+ len += (count > fracDig) ? (count + 1) : (fracDig + 2);
  
  if (len <= size)
  {
-  if (width >= count)
+  if (fracDig >= count)
   {
    *p1++ = '0';
-   if (width != 0)
-    *p1++ = '.';
-   for (int i = count; i < width; i++)
+   *p1++ = '.';
+   while (--fracDig >= count)
     *p1++ = '0';
+   while(--count >= 0)
+    *p1++ = *--p;
   }
-
-  if (count > 0)
+  else
   {
-   while (count > 0)
+   while (count >= 0)
    {
-    if (width == count)
+    if (fracDig == count)
     {
-     if (width != 0)
+     if (fracDig != 0)
       *p1++ = '.';
     }
     *p1++ = *--p;
@@ -977,7 +1032,7 @@ void pwrCalc(P_RMSPWR pwr, P_PWR_TOTAL p, int dbg)
 	 
  if (pwrDbg & dbg)
  {
-  char convBuf[32];
+  char convBuf[I64BUF_SIZE];
   printf("p%s0 %5u buf %3d %5d samples %4d vSum %16s ",
 	 p->label, (unsigned int) (pwr->bufTime - p->p.time),
 	 p->p.buffers, pwr->bufCount-1,
@@ -1025,7 +1080,7 @@ void updatePower(P_CHANCFG chan)
 
   if (pwrDbg & DBG_BUF_RAW)
   {
-   char convBuf[32];
+   char convBuf[I64BUF_SIZE];
    printf("b %2d, %5d, %5u, %4d, %10s, ",
 	  ep, pwr->bufCount, (unsigned int) (buf->time - pwr->lastBufTime),
 	  samples, i64toa(buf->vSum, convBuf));
@@ -1053,7 +1108,8 @@ void updatePower(P_CHANCFG chan)
    printf("%2d\n", pwrFactor);
   }
 
-  // savePwrData(buf);
+  if (pwrDbg & DBG_PWR_SAVE)
+   savePwrData(buf);
 
   if (pwrDbg & DBG_PWR_DISPLAY)
   {
@@ -1075,7 +1131,7 @@ void updatePower(P_CHANCFG chan)
     int pwrFactor = (100 * absRealPwr) / aprntPwr;
 
     printf("pi0 %2d %5u ", ep, (unsigned int) (buf->time - pwr->lastTime));
-    char convBuf[32];
+    char convBuf[I64BUF_SIZE];
     printf("samples %4d vSum %12s ",
 	   samples, i64toa(buf->vSum, convBuf));
     printf("vDelta %4d cSum %12s ",
@@ -1174,7 +1230,7 @@ void updateRms(P_CHANCFG chan)
     rms->displayTime += DISPLAY_INTERVAL;
     int offset = buf->offset >> SAMPLE_SHIFT;
     checkNewLine();
-    char convBuf[32];
+    char convBuf[I64BUF_SIZE];
     printf("r %c0 %2d %5u ",
 	   rms->label, ep, (unsigned int) (buf->time - rms->lastTime));
     printf("sample %3d min %4d %4d max %4d %4d delta %4d "
@@ -1195,7 +1251,7 @@ void updateRms(P_CHANCFG chan)
 
    if (pwrDbg & DBG_RMS_MEASURE)
    {
-    char convBuf[32];
+    char convBuf[I64BUF_SIZE];
     checkNewLine();
     printf("%c1 minute rms count %d samples %5d sum %10s rms %5d %5d ",
 	   rms->label, rms->minuteCount, rms->rmsSamples,
@@ -1235,8 +1291,8 @@ void updateRms(P_CHANCFG chan)
 
 void printBufC(bool scale)
 {
- int count = sizeof(buf) / sizeof(uint16_t);
- uint16_t *p = (uint16_t *) buf;
+ int count = sizeof(adcBuf) / sizeof(uint16_t);
+ uint16_t *p = (uint16_t *) adcBuf;
  int col = 0;
  while (1)
  {
@@ -1303,7 +1359,7 @@ void adcRead1(void)
 // HAL_StatusTypeDef status;
 //#endif	 /* HAL */
 
- memset(buf, 0, sizeof(buf));
+ memset(adcBuf, 0, sizeof(adcBuf));
  pwrActive = false;
 
  extTrig = true;
@@ -1433,8 +1489,8 @@ void adcRead1(void)
      else
 #endif	/* SIMULTANEOUS */
      {
-      adc1Ptr = &buf[0];
-      adc2Ptr = &buf[1];
+      adc1Ptr = &adcBuf[0];
+      adc2Ptr = &adcBuf[1];
       adc1Counter = SAMPLES;
       adc2Counter = SAMPLES;
       adc1Chan = 0;
@@ -1697,9 +1753,9 @@ void adcRead(void)
 {
  if (!pwrActive)
  {
-  memset(buf, 0, sizeof(buf));
-  adc1Ptr = &buf[0];
-  adc2Ptr = &buf[1];
+  memset(adcBuf, 0, sizeof(adcBuf));
+  adc1Ptr = &adcBuf[0];
+  adc2Ptr = &adcBuf[1];
  }
 
  dbg0Clr();
@@ -2102,8 +2158,8 @@ inline void saveData(int sample)
  {
   if (--testCount < 0)
   {
-   testCount = sizeof(buf) / sizeof(uint16_t);
-   testPtr = buf;
+   testCount = sizeof(adcBuf) / sizeof(uint16_t);
+   testPtr = adcBuf;
   }
   *testPtr++ = sample;
  }
@@ -2153,7 +2209,7 @@ extern "C" void ADC1_2_IRQHandler(void)
    sample -= offset;		/* offset sample */
    sample >>= SAMPLE_SHIFT;	/* remove scale factor */
    rms->value = sample;		/* save sample value */
-   rms->sum += sample * sample;	/* update squared sum */
+   rms->sum += sample * sample; /* update squared sum */
   }
   else				/* if test mode */
   {
@@ -2298,7 +2354,7 @@ unsigned char gethex(void)
  char ch;
  int count;
 
- val = 0;
+ numVal = 0;
  count = 0;
  while (count <= 8)
  {
@@ -2311,7 +2367,7 @@ unsigned char gethex(void)
    count++;
   }
   else if ((ch >= 'a')
-  &&       (ch <= 'f'))
+  &&	   (ch <= 'f'))
   {
    putBufChar(ch);
    ch -= 'a' - 10;
@@ -2323,7 +2379,7 @@ unsigned char gethex(void)
    if (count > 0)
    {
     --count;
-    val >>= 4;
+    numVal >>= 4;
     putBufChar(8);
     putBufChar(' ');
     putBufChar(8);
@@ -2338,8 +2394,8 @@ unsigned char gethex(void)
    break;
   else
    continue;
-  val <<= 4;
-  val += ch;
+  numVal <<= 4;
+  numVal += ch;
  }
  return(count != 0);
 }
@@ -2381,11 +2437,49 @@ void currentCmds(void)		/* C in lclcmd for current commands */
   newline();
 #endif	/* ARDUINO_ARCH_STM32 */
 
-  if (ch == 'e')		/* stop timer to stop data collection */
+  if (ch == '?')
+  {
+   printf("r - run data collection \n");
+   printf("e - end data collection\n");
+   printf("a - read adc data\n");
+   printf("p - print adc data\n");
+   flushBuf();
+   printf("S - set save flags\n");
+   printf("P - clear save and print\n");
+   printf("c - clear adc counters\n");
+   printf("d - set debug flags \n");
+   printf("Q - stm32Info \n");
+   flushBuf();
+   printf("R - run power save\n");
+   printf("D - dump power save\n");
+   printf("s - adc status\n");
+   printf("t - test init and run\n");
+   flushBuf();
+   printf("f - test scaling \n");
+   printf("x - exit current commands \n");
+   flushBuf();
+  }
+
+  else if (ch == 'r')		/* *** start here */
+  {
+   newline();
+   testCount = 0;
+   testSave = true;
+   adcRun();
+   break;			/* exit loop to allow console output */
+  }
+
+  else if (ch == 'e')		/* stop timer to stop data collection */
   {
    adcTmrStop();
    adcTmrClrIE();
    printf("\ntimer stopped\n");
+  }
+
+  else if (ch == 'a')
+  {
+   newline();
+   adcRead1();
   }
 
   else if (ch == 'p')
@@ -2394,10 +2488,21 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    printBufC(0);
   }
 
-  else if (ch == 'a')
+  else if (ch == 's')
   {
    newline();
-   adcRead1();
+   adcStatus();
+  }
+
+  else if (ch == 'c')
+  {
+   __disable_irq();
+   dmaInts = 0;
+   adc1Ints = 0;
+   adc2Ints = 0;
+   timUpInts = 0;
+   timCCInts = 0;
+   __enable_irq();
   }
 
   else if (ch == 'd')
@@ -2414,22 +2519,14 @@ void currentCmds(void)		/* C in lclcmd for current commands */
 	  "0x100 RMS_SEND\n"\
 	  "0x200 BUF_RAW\n"\
 	  "0x400 BUF_CALC\n"
+	  "0x800 PWR_SAVE\n"
     );
-   ch = query(&getNum, "dbg flag: ");
+   ch = query(&gethex, "dbg flag [0x%04x]: ", pwrDbg);
    if (ch)
    {
     pwrDbg = numVal;
    }
    printf("pwrDbg 0x%03x\n", pwrDbg);
-  }
-
-  else if (ch == 'r')		/* *** start here */
-  {
-   newline();
-   testCount = 0;
-   testSave = true;
-   adcRun();
-   break;			/* exit loop to allow console output */
   }
 
 #if defined(ARDUINO_ARCH_STM32)
@@ -2445,43 +2542,43 @@ void currentCmds(void)		/* C in lclcmd for current commands */
    memset((void *) pwrSaveBuf, 0, sizeof(pwrSaveBuf));
    pwrSaveCount = 0;
    pwrSavePtr = pwrSaveBuf;
+   pwrDbg |= DBG_PWR_SAVE;
    pwrSaveActive = true;
    printf("saving power data %u\n", (unsigned int) sizeof(pwrSaveBuf));
   }
 
   else if (ch == 'D')
   {
-   newline();
-   pwrSaveActive = false;
-   P_PWR_SAVE buf = pwrSavePtr;
-   uint32_t lastTime = buf->time;
-   char convBuf[32];
-   int count = pwrSaveCount;
-   for (int i = 0; i < PWR_SAVE_BUFFERS; i++)
+   if (pwrSaveActive)
    {
-    printf("%2d, %2d, %7u, %4d, %10s, ",
-	   i, count, (unsigned int) (buf->time - lastTime), buf->samples,
-	   i64toa(buf->vSum, convBuf));
-    printf("%10s, ", i64toa(buf->cSum, convBuf));
-    printf("%10s, ", i64toa(buf->pwrSum, convBuf));
-    printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
-    flushBuf();
-    lastTime = buf->time;
-    count += 1;
-    if (count >= PWR_SAVE_BUFFERS)
+    newline();
+    pwrSaveActive = false;
+    P_PWR_SAVE buf = pwrSavePtr;
+    uint32_t lastTime = buf->time;
+    char convBuf[I64BUF_SIZE];
+    int count = pwrSaveCount;
+    for (int i = 0; i < PWR_SAVE_BUFFERS; i++)
     {
-     buf = pwrSaveBuf;
-     count = 0;
+     printf("%2d, %2d, %7u, %4d, %10s, ",
+	    i, count, (unsigned int) (buf->time - lastTime), buf->samples,
+	    i64toa(buf->vSum, convBuf));
+     printf("%10s, ", i64toa(buf->cSum, convBuf));
+     printf("%10s, ", i64toa(buf->pwrSum, convBuf));
+     printf("%10s\n", i64toa(buf->absPwrSum, convBuf));
+     flushBuf();
+     lastTime = buf->time;
+     count += 1;
+     if (count >= PWR_SAVE_BUFFERS)
+     {
+      buf = pwrSaveBuf;
+      count = 0;
+     }
+     else
+      buf += 1;
     }
-    else
-     buf += 1;
    }
-  }
-
-  else if (ch == 's')
-  {
-   newline();
-   adcStatus();
+   else
+    printf("power save not active\n");
   }
 
   else if (ch == 't')
@@ -2603,13 +2700,13 @@ void currentCmds(void)		/* C in lclcmd for current commands */
     orMask.val = 0;
     if (query(&gethex, "\nand mask: "))
     {
-     andMask.mask = val;
+     andMask.mask = numVal;
      andMask.flag = 1;
     }
 
     if (query(&gethex, "\nor mask: "))
     {
-     orMask.mask = val;
+     orMask.mask = numVal;
      orMask.flag = 1;
     }
 
@@ -2627,7 +2724,7 @@ void currentCmds(void)		/* C in lclcmd for current commands */
      {
       printf("done: ");
       flushBuf();
-      while (dbgRxReady() == 0)	/* while no character */
+      while (dbgRxReady() == 0) /* while no character */
        ;
       ch = dbgRxRead();
       putBufChar(ch);
@@ -2639,7 +2736,7 @@ void currentCmds(void)		/* C in lclcmd for current commands */
     }
    }
   }
-#endif  /* ARDUINO_ARCH_STM32 */
+#endif	/* ARDUINO_ARCH_STM32 */
 
   else if (ch == 'f')
   {
